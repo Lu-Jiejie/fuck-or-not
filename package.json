@@ -13,6 +13,7 @@
     "postinstall": "npx simple-git-hooks"
   },
   "dependencies": {
+    "@google/genai": "catalog:frontend",
     "@vueuse/core": "catalog:frontend",
     "vue": "catalog:frontend",
     "vue-router": "catalog:frontend"
@@ -22,8 +23,8 @@
     "@iconify-json/carbon": "catalog:build",
     "@types/node": "catalog:types",
     "@unocss/eslint-plugin": "catalog:dev",
+    "@unocss/transformer-directives": "catalog:build",
     "@vitejs/plugin-vue": "catalog:build",
-    "@vue-macros/volar": "catalog:dev",
     "@vue/test-utils": "catalog:test",
     "eslint": "catalog:dev",
     "eslint-plugin-format": "catalog:dev",
@@ -33,7 +34,6 @@
     "taze": "catalog:dev",
     "typescript": "catalog:dev",
     "unocss": "catalog:build",
-    "unplugin-vue-macros": "catalog:build",
     "unplugin-vue-router": "catalog:build",
     "vite": "catalog:build",
     "vitest": "catalog:test",

@@ -1,50 +1,190 @@
-<script setup lang="ts" generic="T extends any, O extends any">
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
-import TheInput from '~/components/TheInput.vue'
+<script setup lang="ts">
+import { useStorage } from '@vueuse/core'
+import { computed, ref } from 'vue'
+import ButtonSelect from '~/components/ButtonSelect.vue'
+import ImageUploader from '~/components/ImageUploader.vue'
+import Select from '~/components/Select.vue'
+import { fileToBase64, generateContent } from '~/logic'
+import { defaultConcisePrompt, defaultDetailedPrompt, defaultNovelPrompt } from '~/logic/prompts'
 
 defineOptions({
   name: 'IndexPage',
 })
 
-const name = ref('')
+const image = ref<File | null>(null)
 
-const router = useRouter()
-function go() {
-  if (name.value)
-    router.push(`/hi/${encodeURIComponent(name.value)}`)
+const googleApiKey = useStorage('google-api-key', '')
+const concisePrompt = useStorage('concise-prompt', '')
+const detailedPrompt = useStorage('detailed-prompt', '')
+const novelPrompt = useStorage('novel-prompt', '')
+const customPrompts = useStorage('custom-prompt', '')
+const selectedModel = useStorage('selected-model', 'gemini-2.0-flash')
+const selectedMode = useStorage<'concise' | 'detailed' | 'novel' | 'custom'>('selected-mode', 'novel')
+const result = ref('')
+const errorMsg = ref('')
+const isWaiting = ref(false)
+const isValid = computed(() => {
+  return selectedModel.value && selectedMode.value && image.value
+})
+
+const modelOptions = [
+  { label: 'Gemini 2.0 Flash（默认版本 – 快速且宽容）', value: 'gemini-2.0-flash' },
+  { label: 'Gemini 2.5 Flash（速度与准确性提升）', value: 'gemini-2.5-flash' },
+  { label: 'Gemini 1.5 Flash（轻量且响应迅速，较旧版本）', value: 'gemini-1.5-flash' },
+  { label: 'Gemini 2.0 Flash-Lite (速度飞快, 适合快速测试)', value: 'gemini-2.0-flash-lite' },
+  { label: 'Gemini 2.5 Flash-Lite Preview (极速预览版, 细节有所减少)', value: 'gemini-2.5-flash-lite-preview-06-17' },
+  { label: 'Gemini 1.5 Pro（稳定且宽容的经典型号 - 需付费）', value: 'gemini-1.5-pro' },
+  { label: 'Gemini 2.5 Pro（最强大 – 需付费）', value: 'gemini-2.5-pro' },
+  { label: 'Gemma 3（极速，适合快速结果）', value: 'gemma-3' },
+]
+const modeOptions = computed(() => {
+  const options = [
+    { label: '简洁', subLabel: '简短1-2句，够味', value: 'concise' },
+    { label: '详细', subLabel: '细嗦3+句，够劲', value: 'detailed' },
+    { label: '小说', subLabel: '400字以上，够硬核', value: 'novel' },
+  ]
+  if (customPrompts.value !== '') {
+    options.push({ label: '自定义', subLabel: 'XP，够自由', value: 'custom' })
+  }
+  console.log(options)
+  return options
+})
+
+async function handleClick() {
+  // return alert('请先设置 Google API 密钥。')
+  isWaiting.value = true
+
+  try {
+    const base64Image = await fileToBase64(image.value!)
+    const contents: Parameters<typeof generateContent>[2] = [
+      {
+        inlineData: {
+          data: base64Image,
+          mimeType: image.value!.type,
+        },
+      },
+      {
+        text: '分析这张图片',
+      },
+    ]
+    let finalPrompt = ''
+    switch (selectedMode.value) {
+      case 'concise':
+        finalPrompt = concisePrompt.value || defaultConcisePrompt
+        break
+      case 'detailed':
+        finalPrompt = detailedPrompt.value || defaultDetailedPrompt
+        break
+      case 'novel':
+        finalPrompt = novelPrompt.value || defaultNovelPrompt
+        break
+      default:
+        finalPrompt = customPrompts.value
+    }
+
+    const response = await generateContent(
+      googleApiKey.value,
+      selectedModel.value,
+      contents,
+      finalPrompt,
+    )
+
+    console.log(response)
+    if (response.text === '' || response.text === null) {
+      if (response.candidates![0].finishReason === 'PROHIBITED_CONTENT') {
+        errorMsg.value = '内容被安全过滤器阻止，请重试或更换模型。'
+      }
+      else {
+        errorMsg.value = '发生未知错误，请稍后再试或检查控制台日志。'
+      }
+    }
+    else {
+      result.value = response.text!
+      errorMsg.value = ''
+    }
+  }
+  catch (error) {
+    console.error(error)
+    errorMsg.value = '发生错误，请稍后再试或检查控制台日志。'
+  }
+  finally {
+    isWaiting.value = false
+  }
 }
+
+const formattedResult = computed(() => {
+  return result.value.split('\n\n').map(paragraph =>
+    paragraph.trim() ? `　　${paragraph}` : '',
+  ).join('\n\n')
+})
 </script>
 
 <template>
   <div>
-    <div i-carbon-campsite text-4xl inline-block />
-    <p>
-      <a rel="noreferrer" href="https://github.com/antfu-collective/vitesse-lite" target="_blank">
-        Vitesse Lite
-      </a>
-    </p>
-    <p>
-      <em text-sm op75>Opinionated Vite Starter Template</em>
-    </p>
+    <h1 text-3xl font-bold>
+      上不上 AI 分析
+    </h1>
 
     <div py-4 />
+    <span label ml-0.5>
+      模型
+    </span>
+    <Select v-model="selectedModel" :options="modelOptions" />
 
-    <TheInput
-      v-model="name"
-      placeholder="What's your name?"
-      autocomplete="false"
-      @keydown.enter="go"
-    />
+    <div py-4 />
+    <span label ml-0.5>
+      模式
+    </span>
+    <ButtonSelect v-model="selectedMode" :options="modeOptions" />
 
-    <div>
-      <button
-        class="text-sm btn m-3"
-        :disabled="!name"
-        @click="go"
-      >
-        Go
-      </button>
+    <div py-4 />
+    <span label ml-0.5>
+      上传图片
+    </span>
+    <ImageUploader v-model="image" />
+
+    <div py-4 />
+    <button
+      :disabled="!isValid || isWaiting"
+      text-white font-bold rounded bg-teal-600 h-12 w-full
+      transition-colors duration-200
+      disabled:bg-teal-700 disabled:text-gray-400
+      hover:bg-teal-700
+      :class="[
+        isWaiting
+          ? 'cursor-wait'
+          : !isValid
+            ? 'cursor-not-allowed'
+            : 'cursor-pointer',
+      ]"
+      @click="handleClick"
+    >
+      分析
+    </button>
+
+    <div py-4 />
+    <span v-show="result !== '' || errorMsg !== ''" label ml-0.5>
+      分析结果
+    </span>
+    <div
+      v-show="errorMsg !== ''"
+      p="x-4 y-3"
+      border="~ base hover-base rounded"
+      whitespace-pre-wrap text-left font-bold
+      bg-red-400
+    >
+      {{ errorMsg }}
     </div>
+    <div v-show="result !== '' && errorMsg !== ''" py-1 />
+    <div
+      v-show="result !== ''"
+      p="x-4 y-3" select-text
+      border="~ base hover-base rounded"
+      whitespace-pre-wrap text-left font-mono
+      bg-light dark:bg-dark
+    >
+      {{ formattedResult }}
+    </div>
+    <div v-show="result !== '' || errorMsg !== ''" py-4 />
   </div>
 </template>

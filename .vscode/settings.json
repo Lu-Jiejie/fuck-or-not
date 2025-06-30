@@ -1,8 +1,4 @@
 {
-  "files.associations": {
-    "*.css": "postcss"
-  },
-
   // Enable the ESlint flat config support
   "eslint.useFlatConfig": true,
 
@@ -44,5 +40,5 @@
     "json",
     "jsonc",
     "yaml"
-  ],
+  ]
 }
