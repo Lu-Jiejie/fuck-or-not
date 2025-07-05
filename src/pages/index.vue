@@ -1,6 +1,9 @@
 <script setup lang="ts">
+import type { FavoriteResult } from '~/types'
 import { useStorage } from '@vueuse/core'
+import { useIDBKeyval } from '@vueuse/integrations/useIDBKeyval'
 import { computed, ref } from 'vue'
+import Button from '~/components/Button.vue'
 import ButtonSelect from '~/components/ButtonSelect.vue'
 import ImageUploader from '~/components/ImageUploader.vue'
 import Select from '~/components/Select.vue'
@@ -12,6 +15,7 @@ defineOptions({
 })
 
 const image = ref<File | null>(null)
+const base64Image = ref<string | null>(null)
 
 const googleApiKey = useStorage('google-api-key', '')
 const concisePrompt = useStorage('concise-prompt', '')
@@ -22,10 +26,15 @@ const selectedModel = useStorage('selected-model', 'gemini-2.0-flash')
 const selectedMode = useStorage<'concise' | 'detailed' | 'novel' | 'custom'>('selected-mode', 'novel')
 const result = ref('')
 const errorMsg = ref('')
-const isWaiting = ref(false)
-const isValid = computed(() => {
-  return selectedModel.value && selectedMode.value && image.value
+const analyseButtonLoading = ref(false)
+const analyseButtonDisabled = computed(() => {
+  return !selectedModel.value || !selectedMode.value || !image.value
 })
+
+const saveButtonDisabled = ref(false)
+
+const favoriteResults = useIDBKeyval('favorite-results', [] as FavoriteResult[])
+const lastFavoriteResult = ref<FavoriteResult | null>(null)
 
 const modelOptions = [
   { label: 'Gemini 2.0 Flash（默认版本 – 快速且宽容）', value: 'gemini-2.0-flash' },
@@ -46,20 +55,19 @@ const modeOptions = computed(() => {
   if (customPrompts.value !== '') {
     options.push({ label: '自定义', subLabel: 'XP，够自由', value: 'custom' })
   }
-  console.log(options)
   return options
 })
 
-async function handleClick() {
+async function handleAnalyseButtonClick() {
   // return alert('请先设置 Google API 密钥。')
-  isWaiting.value = true
+  analyseButtonLoading.value = true
 
   try {
-    const base64Image = await fileToBase64(image.value!)
+    base64Image.value = await fileToBase64(image.value!)
     const contents: Parameters<typeof generateContent>[2] = [
       {
         inlineData: {
-          data: base64Image,
+          data: base64Image.value,
           mimeType: image.value!.type,
         },
       },
@@ -90,7 +98,7 @@ async function handleClick() {
     )
 
     console.log(response)
-    if (response.text === '' || response.text === null) {
+    if (response.text === '' || response.text === null || response.text === undefined) {
       if (response.candidates![0].finishReason === 'PROHIBITED_CONTENT') {
         errorMsg.value = '内容被安全过滤器阻止，请重试或更换模型。'
       }
@@ -99,8 +107,16 @@ async function handleClick() {
       }
     }
     else {
+      saveButtonDisabled.value = false
       result.value = response.text!
       errorMsg.value = ''
+      lastFavoriteResult.value = {
+        model: selectedModel.value,
+        mode: selectedMode.value,
+        image: base64Image.value,
+        time: Date.now(),
+        result: response.text!,
+      }
     }
   }
   catch (error) {
@@ -108,43 +124,41 @@ async function handleClick() {
     errorMsg.value = '发生错误，请稍后再试或检查控制台日志。'
   }
   finally {
-    isWaiting.value = false
+    analyseButtonLoading.value = false
   }
 }
 
-const formattedResult = computed(() => {
-  return result.value.split('\n\n').map(paragraph =>
-    paragraph.trim() ? `　　${paragraph}` : '',
-  ).join('\n\n')
-})
+function handleSaveButtonClick() {
+  saveButtonDisabled.value = true
+  favoriteResults.data.value.unshift(lastFavoriteResult.value!)
+}
 </script>
 
 <template>
-  <div>
-    <h1 text-3xl font-bold>
-      上不上 AI 分析
-    </h1>
+  <h1 text-3xl font-bold>
+    上不上 AI 分析
+  </h1>
 
-    <div py-4 />
-    <span label ml-0.5>
-      模型
-    </span>
-    <Select v-model="selectedModel" :options="modelOptions" />
+  <div py-4 />
+  <span label ml-0.5>
+    模型
+  </span>
+  <Select v-model="selectedModel" :options="modelOptions" />
 
-    <div py-4 />
-    <span label ml-0.5>
-      模式
-    </span>
-    <ButtonSelect v-model="selectedMode" :options="modeOptions" />
+  <div py-4 />
+  <span label ml-0.5>
+    模式
+  </span>
+  <ButtonSelect v-model="selectedMode" :options="modeOptions" />
 
-    <div py-4 />
-    <span label ml-0.5>
-      上传图片
-    </span>
-    <ImageUploader v-model="image" />
+  <div py-4 />
+  <span label ml-0.5>
+    上传图片
+  </span>
+  <ImageUploader v-model="image" />
 
-    <div py-4 />
-    <button
+  <div py-2 />
+  <!-- <button
       :disabled="!isValid || isWaiting"
       text-white font-bold rounded bg-teal-600 h-12 w-full
       transition-colors duration-200
@@ -160,31 +174,47 @@ const formattedResult = computed(() => {
       @click="handleClick"
     >
       分析
-    </button>
+    </button> -->
+  <Button
+    :loading="analyseButtonLoading" :disabled="analyseButtonDisabled"
+    :disable-on-loading="true"
+    loading-text="分析中..." @click="handleAnalyseButtonClick"
+  >
+    分析
+  </Button>
 
-    <div py-4 />
-    <span v-show="result !== '' || errorMsg !== ''" label ml-0.5>
-      分析结果
-    </span>
-    <div
-      v-show="errorMsg !== ''"
-      p="x-4 y-3"
-      border="~ base hover-base rounded"
-      whitespace-pre-wrap text-left font-bold
-      bg-red-400
-    >
-      {{ errorMsg }}
-    </div>
-    <div v-show="result !== '' && errorMsg !== ''" py-1 />
-    <div
-      v-show="result !== ''"
-      p="x-4 y-3" select-text
-      border="~ base hover-base rounded"
-      whitespace-pre-wrap text-left font-mono
-      bg-light dark:bg-dark
-    >
-      {{ formattedResult }}
-    </div>
-    <div v-show="result !== '' || errorMsg !== ''" py-4 />
+  <div py-4 />
+  <span v-show="result !== '' || errorMsg !== ''" label ml-0.5>
+    分析结果
+  </span>
+
+  <div
+    v-show="errorMsg !== ''"
+    p="x-4 y-3"
+    border="~ base hover-base rounded"
+    whitespace-pre-wrap text-left font-bold
+    bg-red-400
+  >
+    {{ errorMsg }}
   </div>
+  <div v-show="result !== '' && errorMsg !== ''" py-1 />
+  <div
+    v-show="result !== ''"
+    p="x-4 y-3" select-text
+    border="~ base hover-base rounded"
+    bg="light dark:dark"
+    whitespace-pre-wrap text-left font-mono
+  >
+    {{ result }}
+  </div>
+  <div v-show="result !== ''">
+    <div py-2 />
+    <Button
+      :disabled="saveButtonDisabled" disabled-text="已保存"
+      @click="handleSaveButtonClick"
+    >
+      保存结果
+    </Button>
+  </div>
+  <div v-show="result !== '' || errorMsg !== ''" py-4 />
 </template>

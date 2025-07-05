@@ -5,7 +5,7 @@ import TheFooter from './components/Footer.vue'
 
 <template>
   <main
-    font-sans p="x-4 y-10" m-auto max-w-170
+    font-sans p="x-4 y-10" m-auto max-w-180
     text="center gray-700 dark:gray-200" select-none
   >
     <RouterView />

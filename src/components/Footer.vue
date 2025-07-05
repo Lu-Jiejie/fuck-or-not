@@ -12,10 +12,33 @@ const route = useRoute()
       <div i-carbon-sun dark:i-carbon-moon />
     </button>
 
-    <a v-if="route.path !== '/settings'" title="Settings" icon-btn href="/settings" target="_blank">
+    <button
+      v-if="route.path !== '/favorites'"
+      icon-btn title="Favorites"
+      @click="router.push('/favorites')"
+    >
+      <div i-carbon-bookmark />
+    </button>
+    <button
+      v-else
+      icon-btn title="Home"
+      @click="router.push('/')"
+    >
+      <div i-carbon-home />
+    </button>
+
+    <button
+      v-if="route.path !== '/settings'"
+      icon-btn title="Settings"
+      @click="router.push('/settings')"
+    >
       <div i-carbon-settings />
-    </a>
-    <button v-else icon-btn title="Home" @click="router.push('/')">
+    </button>
+    <button
+      v-else
+      icon-btn title="Home"
+      @click="router.push('/')"
+    >
       <div i-carbon-home />
     </button>
 
