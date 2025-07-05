@@ -40,6 +40,8 @@ function formatTime(ts: number) {
     >
       <img
         :src="`data:image/png;base64,${props.item.image}`"
+        :alt="`Favorite item image at ${formatTime(props.item.time)}`"
+        class="preview"
         rounded max-h-100 max-w-full object-contain
         bg-transparent block
       >

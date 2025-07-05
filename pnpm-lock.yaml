@@ -9,6 +9,9 @@ catalogs:
     '@iconify-json/carbon':
       specifier: ^1.2.10
       version: 1.2.10
+    '@iconify-json/stash':
+      specifier: ^1.2.2
+      version: 1.2.2
     '@unocss/transformer-directives':
       specifier: ^66.3.2
       version: 66.3.2
@@ -116,6 +119,9 @@ importers:
       '@iconify-json/carbon':
         specifier: catalog:build
         version: 1.2.10
+      '@iconify-json/stash':
+        specifier: catalog:build
+        version: 1.2.2
       '@types/node':
         specifier: catalog:types
         version: 22.16.0
@@ -707,6 +713,9 @@ packages:
 
   '@iconify-json/carbon@1.2.10':
     resolution: {integrity: sha512-Z+psKjwGZ9wZu+mVOStmIqHux1OWc8AtDiJ4eHmOkbcW5SMoGVtsQ6LWGJcYguT+9q9YgGihUTvHEnQSPWKGiQ==}
+
+  '@iconify-json/stash@1.2.2':
+    resolution: {integrity: sha512-2jLAw0yWGqqaHjLu/8kIQxlEP3SYBjuDVriwkO+bpDd3LdIrkRE5TCfpY6KhsYU58n/fJF9ZhCbyXLxH54rdpg==}
 
   '@iconify/types@2.0.0':
     resolution: {integrity: sha512-+wluvCrRhXrhyOmRDJ3q8mux9JkKy5SJ/v8ol2tu4FVjyYvtEzkc/3pK15ET6RKg4b4w4BmTk1+gsCUhf21Ykg==}
@@ -3453,6 +3462,10 @@ snapshots:
   '@humanwhocodes/retry@0.4.2': {}
 
   '@iconify-json/carbon@1.2.10':
+    dependencies:
+      '@iconify/types': 2.0.0
+
+  '@iconify-json/stash@1.2.2':
     dependencies:
       '@iconify/types': 2.0.0
 

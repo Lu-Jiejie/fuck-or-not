@@ -4,7 +4,7 @@
   "packageManager": "pnpm@10.12.4",
   "scripts": {
     "build": "vite build",
-    "dev": "vite --port 3333 --open",
+    "dev": "vite --port 3333 --open --host",
     "lint": "eslint .",
     "typecheck": "vue-tsc",
     "preview": "vite preview",
@@ -23,6 +23,7 @@
   "devDependencies": {
     "@antfu/eslint-config": "catalog:dev",
     "@iconify-json/carbon": "catalog:build",
+    "@iconify-json/stash": "catalog:build",
     "@types/node": "catalog:types",
     "@unocss/eslint-plugin": "catalog:dev",
     "@unocss/transformer-directives": "catalog:build",

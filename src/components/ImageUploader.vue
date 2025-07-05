@@ -10,6 +10,9 @@ const emit = defineEmits<{
   uploaded: [file: File]
   error: [message: string]
 }>()
+
+const imageModel = ref<HTMLImageElement>()
+
 const modelValue = defineModel<File | null>()
 const fileInput = ref<HTMLInputElement>()
 const isEmpty = computed(() => !modelValue.value)
@@ -23,7 +26,8 @@ function handleInputChange(e: Event) {
   if (file) {
     handleFileSelect(file)
   }
-  else {
+  // maybe should not remove image
+  else if (false) {
     removeImage()
   }
 }
@@ -71,6 +75,18 @@ function handleDrop(e: DragEvent) {
     handleFileSelect(files[0])
   }
 }
+
+function handlePreview() {
+  if (previewUrl.value) {
+    const img = new window.Image()
+    img.src = previewUrl.value
+    img.alt = 'preview image'
+    img.className = 'preview image-uploader'
+    document.body.appendChild(img)
+    img.click()
+    document.body.removeChild(img)
+  }
+}
 </script>
 
 <template>
@@ -115,12 +131,25 @@ function handleDrop(e: DragEvent) {
 
     <div
       v-show="!isEmpty"
-      flex="~ col items-center justify-center"
+      flex="~ col items-center justify-center relative"
     >
       <img
-        :src="previewUrl"
+        ref="imageModel" :src="previewUrl"
         rounded max-h-100 max-w-full object-contain
+        class="block"
       >
+
+      <!-- preview button -->
+      <button
+        absolute top-2 right-2 z-10 p-1
+        border="rounded-full" transition
+        hover="bg-dark/15 dark:bg-light/15"
+        cursor-pointer
+        title="preview image"
+        @click.stop="handlePreview"
+      >
+        <div i-stash-expand-diagonal-duotone text-2xl text-teal-600 dark:text-teal-700 />
+      </button>
     </div>
   </div>
 </template>

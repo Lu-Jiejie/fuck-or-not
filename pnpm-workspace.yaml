@@ -2,6 +2,7 @@ packages: []
 catalogs:
   build:
     '@iconify-json/carbon': ^1.2.10
+    '@iconify-json/stash': ^1.2.2
     '@unocss/transformer-directives': ^66.3.2
     '@vitejs/plugin-vue': ^6.0.0
     unocss: ^66.3.2
