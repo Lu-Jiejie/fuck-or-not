@@ -143,7 +143,7 @@ function handlePreview() {
       <button
         absolute top-2 right-2 z-10 p-1
         border="rounded-full" transition
-        hover="bg-dark/15 dark:bg-light/15"
+        hover="bg-dark/20 dark:bg-light/20"
         cursor-pointer
         title="preview image"
         @click.stop="handlePreview"

@@ -158,23 +158,6 @@ function handleSaveButtonClick() {
   <ImageUploader v-model="image" />
 
   <div py-2 />
-  <!-- <button
-      :disabled="!isValid || isWaiting"
-      text-white font-bold rounded bg-teal-600 h-12 w-full
-      transition-colors duration-200
-      disabled:bg-teal-700 disabled:text-gray-400
-      hover:bg-teal-700
-      :class="[
-        isWaiting
-          ? 'cursor-wait'
-          : !isValid
-            ? 'cursor-not-allowed'
-            : 'cursor-pointer',
-      ]"
-      @click="handleClick"
-    >
-      分析
-    </button> -->
   <Button
     :loading="analyseButtonLoading" :disabled="analyseButtonDisabled"
     :disable-on-loading="true"
