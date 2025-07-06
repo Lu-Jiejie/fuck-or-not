@@ -30,7 +30,7 @@ watchEffect(() => {
     >
       {{ option.label }}
       <span
-        text-xs block mt-1 text-gray-400 dark:text-gray-500
+        text-xs block mt-1 opacity-50
       >{{ option.subLabel }}</span>
     </button>
   </div>

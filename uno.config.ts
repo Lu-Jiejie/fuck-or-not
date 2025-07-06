@@ -12,9 +12,9 @@ export default defineConfig({
     {
       'bg-base': 'bg-white dark:bg-black',
       'border-base': 'border-gray-300 dark:border-gray-800',
-      'border-focus-base': 'focus:border-teal-600 focus:dark:border-teal-700',
-      'border-hover-base': 'hover:border-teal-600 dark:hover:border-teal-700 transition duration-200',
-      'label': 'text-sm block font-semibold text-left mb-2 text-gray-700 dark:text-gray-300',
+      'border-focus-base': 'focus:border-teal-700',
+      'border-hover-base': 'hover:border-teal-700 transition duration-200',
+      'label': 'text-sm block font-semibold text-left mb-2 opacity-90',
       'icon-btn': 'text-[0.9em] inline-block cursor-pointer select-none opacity-75 transition duration-200 hover:opacity-100 hover:text-teal-600',
       'btn': 'px-4 py-1 rounded inline-block bg-teal-600 text-white cursor-pointer hover:bg-teal-700 disabled:cursor-default disabled:bg-gray-600 disabled:opacity-50',
     },

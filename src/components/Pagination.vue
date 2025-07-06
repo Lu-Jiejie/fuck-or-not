@@ -73,8 +73,8 @@ const pages = computed(() => {
       transition duration-200
       :class="[
         currentPage === 1
-          ? 'text-gray-700'
-          : 'text-gray-400 hover:text-teal-500 hover:dark:text-teal-600 cursor-pointer',
+          ? 'opacity-50'
+          : 'opacity-80 hover:text-teal-600 cursor-pointer',
       ]"
       aria-label="上一页"
       @click="prev"
@@ -88,22 +88,22 @@ const pages = computed(() => {
         :class="[
           p === currentPage
             ? 'text-teal-600 font-bold'
-            : 'hover:text-teal-500 cursor-pointer',
+            : 'hover:text-teal-600 cursor-pointer',
         ]"
         :disabled="p === currentPage"
         @click="goTo(p)"
       >
         {{ p }}
       </button>
-      <span v-else i-carbon-overflow-menu-horizontal px-2 text-gray-400 select-none />
+      <span v-else i-carbon-overflow-menu-horizontal px-2 opacity-50 select-none />
     </template>
     <button
       :disabled="currentPage === pageCount"
       transition duration-200
       :class="[
         currentPage === pageCount
-          ? 'text-gray-700'
-          : 'text-gray-500 hover:text-teal-500 hover:dark:text-teal-600 cursor-pointer',
+          ? 'opacity-50'
+          : 'opacity-80 hover:text-teal-600 cursor-pointer',
       ]"
       aria-label="下一页"
       @click="next"

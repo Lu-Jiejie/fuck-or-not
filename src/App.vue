@@ -53,7 +53,7 @@ onBeforeUnmount(() => {
 <template>
   <Header />
   <main
-    font-sans p="x-4 y-10" m-auto max-w-180
+    font-sans p-3 m-auto max-w-180
     text="center gray-700 dark:gray-200" select-none
   >
     <RouterView />

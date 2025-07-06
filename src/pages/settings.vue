@@ -20,7 +20,7 @@ const customPrompts = useStorage('custom-prompt', '')
     <a
       href="https://aistudio.google.com/app/apikey"
       target="_blank"
-      text-gray-500 ml-1 underline cursor-pointer dark:text-gray-400
+      ml-1 underline cursor-pointer opacity-50
     >此处获取</a>
   </span>
   <Input v-model="googleApiKey" type="password" />

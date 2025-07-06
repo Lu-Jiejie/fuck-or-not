@@ -113,7 +113,7 @@ function handlePreview() {
     <div
       v-show="isEmpty && !isDragOver"
       flex="~ col items-center justify-center"
-      text-gray-500 dark:text-gray-400
+      opacity-60
       h-full min-h-50
     >
       <div i-carbon-add-large text-2xl />
@@ -122,9 +122,8 @@ function handlePreview() {
     <div
       v-show="isEmpty && isDragOver"
       flex="~ col items-center justify-center"
-      text-gray-500 dark:text-gray-400
-      bg-light dark:bg-dark
-      h-full min-h-50 transition duration-200
+      bg="light dark:dark"
+      opacity-60 h-full min-h-50 transition duration-200
     >
       <div i-carbon-document-add text-2xl />
     </div>
@@ -147,7 +146,7 @@ function handlePreview() {
         title="preview image"
         @click.stop="handlePreview"
       >
-        <div i-stash-expand-diagonal-duotone text-2xl text-teal-600 dark:text-teal-700 />
+        <div i-stash-expand-diagonal-duotone text-2xl text-teal-700 />
       </button>
     </div>
   </div>

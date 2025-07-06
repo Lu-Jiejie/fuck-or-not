@@ -37,10 +37,10 @@ function togglePasswordVisibility() {
     <button
       v-if="props.type === 'password'"
       type="button"
-      p="x-3 y-3" text-gray-300 translate-y--0.5
+      p="x-3 y-3" translate-y--0.5
+      hover:text-teal-700 text-gray-300 dark:text-gray-800
       transform transition-colors duration-200
       right-0 absolute
-      dark:text-gray-800 hover="text-teal-600 dark:text-teal-700"
       @click="togglePasswordVisibility"
     >
       <div

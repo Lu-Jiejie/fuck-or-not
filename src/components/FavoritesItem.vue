@@ -1,10 +1,18 @@
 <script setup lang="ts">
 import type { FavoriteResult } from '~/types'
+import { computed, ref } from 'vue'
 
 const props = defineProps<{
   item: FavoriteResult
+  // hide result by adding expand button on mobile
+  isMobile: boolean
 }>()
 const emit = defineEmits(['delete'])
+
+const expanded = ref(false)
+const shouldExpand = computed(() => {
+  return expanded.value || !props.isMobile
+})
 
 function formatTime(ts: number) {
   const d = new Date(ts)
@@ -20,7 +28,7 @@ function formatTime(ts: number) {
     flex flex-col gap-3 items-stretch
   >
     <div flex="~ row" items-center justify-between>
-      <div text="sm gray-500 dark:gray-400">
+      <div text="sm" opacity-80>
         <span font-bold>{{ props.item.model }}</span>
         <span mx-2>·</span>
         <span capitalize>{{ props.item.mode }}</span>
@@ -57,14 +65,41 @@ function formatTime(ts: number) {
     </div>
 
     <div
-      p="x-4 y-3"
       border="~ base rounded"
-      whitespace-pre-wrap
-      text-left text-base
       bg="light dark:dark"
+      text="left base"
+      whitespace-pre-wrap
       select-text w-full
+      :class="[
+        shouldExpand
+          ? 'px-4 py-3'
+          : 'bg-light-700 dark:bg-dark-700!',
+      ]"
     >
-      {{ props.item.result }}
+      <div
+        v-if="!shouldExpand"
+        i-carbon-overflow-menu-horizontal
+        m-auto w-full cursor-pointer py-4 opacity-60
+        @click="expanded = !expanded"
+      />
+      <Transition name="fade">
+        <span v-if="shouldExpand"> {{ props.item.result }}</span>
+      </Transition>
     </div>
   </div>
 </template>
+
+<style scoped>
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+.fade-enter-to,
+.fade-leave-from {
+  opacity: 1;
+}
+</style>
