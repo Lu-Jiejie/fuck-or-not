@@ -135,8 +135,7 @@ function handlePreview() {
     >
       <img
         ref="imageModel" :src="previewUrl"
-        rounded max-h-100 max-w-full object-contain
-        class="block"
+        rounded max-h-100 max-w-full object-contain block
       >
 
       <!-- preview button -->

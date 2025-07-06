@@ -4,6 +4,7 @@ import type { FavoriteResult } from '~/types'
 const props = defineProps<{
   item: FavoriteResult
 }>()
+const emit = defineEmits(['delete'])
 
 function formatTime(ts: number) {
   const d = new Date(ts)
@@ -18,7 +19,7 @@ function formatTime(ts: number) {
     bg="light/80 dark:dark/80"
     flex flex-col gap-3 items-stretch
   >
-    <div flex="~ row" items-center justify-between mb-1>
+    <div flex="~ row" items-center justify-between>
       <div text="sm gray-500 dark:gray-400">
         <span font-bold>{{ props.item.model }}</span>
         <span mx-2>·</span>
@@ -28,7 +29,15 @@ function formatTime(ts: number) {
       </div>
 
       <div flex gap-2>
-        <!-- placeholder -->
+        <button
+          type="button" title="Delete this item"
+          p-1 rounded text-white
+          bg="red-600 hover:red-700"
+          transition-colors duration-200
+          @click="emit('delete')"
+        >
+          <div i-carbon-trash-can />
+        </button>
       </div>
     </div>
 
@@ -51,7 +60,7 @@ function formatTime(ts: number) {
       p="x-4 y-3"
       border="~ base rounded"
       whitespace-pre-wrap
-      text-left font-mono text-base
+      text-left text-base
       bg="light dark:dark"
       select-text w-full
     >

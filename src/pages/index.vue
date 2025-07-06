@@ -186,7 +186,7 @@ function handleSaveButtonClick() {
     p="x-4 y-3" select-text
     border="~ base hover-base rounded"
     bg="light dark:dark"
-    whitespace-pre-wrap text-left font-mono
+    whitespace-pre-wrap text-left
   >
     {{ result }}
   </div>
