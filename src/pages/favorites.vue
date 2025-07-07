@@ -2,7 +2,7 @@
 import type { FavoriteResult } from '~/types'
 import { useMediaQuery } from '@vueuse/core'
 import { useIDBKeyval } from '@vueuse/integrations/useIDBKeyval'
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import Button from '~/components/Button.vue'
 import FavoritesItem from '~/components/FavoritesItem.vue'
 import Pagination from '~/components/Pagination.vue'
@@ -25,6 +25,21 @@ function onDelete(idx: number) {
     return
   }
   favoriteResults.data.value?.splice(idx, 1)
+  nextTick(() => {
+    const total = favoriteResults.data.value?.length ?? 0
+    const maxPage = Math.max(1, Math.ceil(total / pageSize))
+    if (page.value > maxPage) {
+      page.value = maxPage
+    }
+  })
+}
+
+function onDeleteAll() {
+  if (!confirm('确定要删除所有收藏吗？')) {
+    return
+  }
+  favoriteResults.data.value = []
+  page.value = 1
 }
 </script>
 
@@ -70,7 +85,7 @@ function onDelete(idx: number) {
         </TransitionGroup>
 
         <div py-4 />
-        <Button color="red">
+        <Button @click="onDeleteAll">
           删除所有收藏
         </Button>
       </template>

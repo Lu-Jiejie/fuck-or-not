@@ -59,7 +59,11 @@ const modeOptions = computed(() => {
 })
 
 async function handleAnalyseButtonClick() {
-  // return alert('请先设置 Google API 密钥。')
+  if (!googleApiKey.value) {
+    errorMsg.value = '请先设置 Google API 密钥。'
+    return
+  }
+
   analyseButtonLoading.value = true
 
   try {

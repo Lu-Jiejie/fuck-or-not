@@ -14,6 +14,13 @@ const shouldExpand = computed(() => {
   return expanded.value || !props.isMobile
 })
 
+const modeMap = {
+  concise: '简洁模式',
+  detailed: '详细模式',
+  novel: '小说模式',
+  custom: '自定义模式',
+}
+
 function formatTime(ts: number) {
   const d = new Date(ts)
   return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()} ${d.getHours()}:${d.getMinutes().toString().padStart(2, '0')}`
@@ -31,7 +38,7 @@ function formatTime(ts: number) {
       <div text="sm" opacity-80>
         <span font-bold>{{ props.item.model }}</span>
         <span mx-2>·</span>
-        <span capitalize>{{ props.item.mode }}</span>
+        <span capitalize>{{ modeMap[props.item.mode] }}</span>
         <span mx-2>·</span>
         <span text-xs>{{ formatTime(props.item.time) }}</span>
       </div>
@@ -40,7 +47,7 @@ function formatTime(ts: number) {
         <button
           type="button" title="Delete this item"
           p-1 rounded text-white
-          bg="red-600 hover:red-700"
+          bg="red-700 hover:red-800"
           transition-colors duration-200
           @click="emit('delete')"
         >
