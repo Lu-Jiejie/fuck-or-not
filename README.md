@@ -4,7 +4,7 @@
 
 ## 使用
 
-访问 [Fuck or Not](https://fuckornot.vercel.app)。
+访问 [Fuck or Not](https://fuckornot.netlify.app/)。
 
 选择你想要的分析类型（简洁、详细、小说模式）并上传你的图片。
 
