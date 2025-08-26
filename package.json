@@ -5,6 +5,7 @@
   "scripts": {
     "build": "vite build",
     "dev": "vite --port 3333 --open --host",
+    "deploy": "netlify deploy",
     "lint": "eslint .",
     "typecheck": "vue-tsc",
     "preview": "vite preview",

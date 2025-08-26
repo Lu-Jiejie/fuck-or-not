@@ -17,3 +17,7 @@
 在设置页，填入你自己的 `API` 密钥，[此处获取](https://aistudio.google.com/app/apikey)。
 
 你可以自定义各个模式的 `Prompt`，或者添加一个自定义的 `Prompt`。
+
+## 模型
+
+体感最好的应该是 **Gemini 2.0 Flash** ，它不容易被安全过滤器禁止，且效果跟 **Gemini 2.5 Flash** 相当。

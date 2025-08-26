@@ -48,14 +48,14 @@ const analyseMethodOptions = [
 ]
 
 const modelOptions = [
-  { label: 'Gemini 2.0 Flash（默认版本 – 快速且宽容）', value: 'gemini-2.0-flash' },
-  { label: 'Gemini 2.5 Flash（速度与准确性提升）', value: 'gemini-2.5-flash' },
-  { label: 'Gemini 1.5 Flash（轻量且响应迅速，较旧版本）', value: 'gemini-1.5-flash' },
-  { label: 'Gemini 2.0 Flash-Lite (速度飞快, 适合快速测试)', value: 'gemini-2.0-flash-lite' },
-  { label: 'Gemini 2.5 Flash-Lite Preview (极速预览版, 细节有所减少)', value: 'gemini-2.5-flash-lite-preview-06-17' },
-  { label: 'Gemini 1.5 Pro（稳定且宽容的经典型号 - 需付费）', value: 'gemini-1.5-pro' },
-  { label: 'Gemini 2.5 Pro（最强大 – 需付费）', value: 'gemini-2.5-pro' },
-  { label: 'Gemma 3（极速，适合快速结果）', value: 'gemma-3' },
+  { label: 'Gemini 2.0 Flash（最推荐）', value: 'gemini-2.0-flash' },
+  { label: 'Gemini 2.5 Flash（准确性提升，但容易被 BAN）', value: 'gemini-2.5-flash' },
+  { label: 'Gemini 1.5 Flash（较旧版本）', value: 'gemini-1.5-flash' },
+  { label: 'Gemini 2.0 Flash-Lite', value: 'gemini-2.0-flash-lite' },
+  { label: 'Gemini 2.5 Flash-Lite Preview', value: 'gemini-2.5-flash-lite-preview-06-17' },
+  { label: 'Gemini 1.5 Pro（需付费）', value: 'gemini-1.5-pro' },
+  { label: 'Gemini 2.5 Pro（需付费）', value: 'gemini-2.5-pro' },
+  { label: 'Gemma 3', value: 'gemma-3' },
 ]
 const modeOptions = computed(() => {
   const options = [
@@ -178,9 +178,8 @@ function handleSaveButtonClick() {
 </script>
 
 <template>
-  {{ googleApiKey }}
   <h1 text-3xl font-bold>
-    上不上 AI 分析系统
+    Fuck or Not
   </h1>
 
   <div py-4 />
