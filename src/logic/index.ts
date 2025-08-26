@@ -1,13 +1,19 @@
 import type { ContentListUnion } from '@google/genai'
 import { GoogleGenAI, HarmBlockThreshold, HarmCategory } from '@google/genai'
-import { useDark, useToggle } from '@vueuse/core'
+import { useDark, useStorage, useToggle } from '@vueuse/core'
+import { ref, watch } from 'vue'
 
 export const isDark = useDark()
 export const toggleDark = useToggle(isDark)
+export const googleApiKey = useStorage('google-api-key', '')
+const ai = ref<GoogleGenAI | null>(new GoogleGenAI({ apiKey: googleApiKey.value }))
 
-export function generateContent(apiKey: string, model: string, contents: ContentListUnion, systemInstruction: string) {
-  const ai = new GoogleGenAI({ apiKey })
-  return ai.models.generateContent({
+watch(googleApiKey, (key) => {
+  ai.value = key ? new GoogleGenAI({ apiKey: key }) : null
+})
+
+export function generateContent(model: string, contents: ContentListUnion, systemInstruction: string) {
+  return ai.value!.models.generateContent({
     model,
     contents,
     config: {
@@ -19,6 +25,15 @@ export function generateContent(apiKey: string, model: string, contents: Content
         { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
         { category: HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY, threshold: HarmBlockThreshold.BLOCK_NONE },
       ],
+    },
+  })
+}
+
+export function uploadFileToAPI(file: File) {
+  return ai.value!.files.upload({
+    file,
+    config: {
+      mimeType: file.type,
     },
   })
 }

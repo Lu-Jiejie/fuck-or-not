@@ -1,5 +1,9 @@
 <script setup lang="ts">
 import type { FavoriteResult } from '~/types'
+import {
+  createPartFromUri,
+  createUserContent,
+} from '@google/genai'
 import { useStorage } from '@vueuse/core'
 import { useIDBKeyval } from '@vueuse/integrations/useIDBKeyval'
 import { computed, ref } from 'vue'
@@ -7,7 +11,7 @@ import Button from '~/components/Button.vue'
 import ButtonSelect from '~/components/ButtonSelect.vue'
 import ImageUploader from '~/components/ImageUploader.vue'
 import Select from '~/components/Select.vue'
-import { fileToBase64, generateContent } from '~/logic'
+import { fileToBase64, generateContent, googleApiKey, uploadFileToAPI } from '~/logic'
 import { defaultConcisePrompt, defaultDetailedPrompt, defaultNovelPrompt } from '~/logic/prompts'
 
 defineOptions({
@@ -17,13 +21,15 @@ defineOptions({
 const image = ref<File | null>(null)
 const base64Image = ref<string | null>(null)
 
-const googleApiKey = useStorage('google-api-key', '')
+// 新增：分析方式选项
+
 const concisePrompt = useStorage('concise-prompt', '')
 const detailedPrompt = useStorage('detailed-prompt', '')
 const novelPrompt = useStorage('novel-prompt', '')
 const customPrompts = useStorage('custom-prompt', '')
 const selectedModel = useStorage('selected-model', 'gemini-2.0-flash')
 const selectedMode = useStorage<'concise' | 'detailed' | 'novel' | 'custom'>('selected-mode', 'novel')
+const uploadType = useStorage<'base64' | 'api'>('upload-type', 'base64')
 const result = ref('')
 const errorMsg = ref('')
 const analyseButtonLoading = ref(false)
@@ -35,6 +41,11 @@ const saveButtonDisabled = ref(false)
 
 const favoriteResults = useIDBKeyval('favorite-results', [] as FavoriteResult[])
 const lastFavoriteResult = ref<FavoriteResult | null>(null)
+
+const analyseMethodOptions = [
+  { label: '直接传递图片', value: 'base64' },
+  { label: '使用 FileAPI 上传图片（适合大于20MB的图片）', value: 'api' },
+]
 
 const modelOptions = [
   { label: 'Gemini 2.0 Flash（默认版本 – 快速且宽容）', value: 'gemini-2.0-flash' },
@@ -63,22 +74,20 @@ async function handleAnalyseButtonClick() {
     errorMsg.value = '请先设置 Google API 密钥。'
     return
   }
+  if (!image.value) {
+    errorMsg.value = '请先上传图片。'
+    return
+  }
+  if (image.value.size > 20 * 1024 * 1024 && uploadType.value === 'base64') {
+    errorMsg.value = '图片大于 20MB，请选择“使用 FileAPI 上传图片”。'
+    return
+  }
 
   analyseButtonLoading.value = true
 
   try {
-    base64Image.value = await fileToBase64(image.value!)
-    const contents: Parameters<typeof generateContent>[2] = [
-      {
-        inlineData: {
-          data: base64Image.value,
-          mimeType: image.value!.type,
-        },
-      },
-      {
-        text: '分析这张图片',
-      },
-    ]
+    let response
+    let lastImage
     let finalPrompt = ''
     switch (selectedMode.value) {
       case 'concise':
@@ -94,16 +103,46 @@ async function handleAnalyseButtonClick() {
         finalPrompt = customPrompts.value
     }
 
-    const response = await generateContent(
-      googleApiKey.value,
-      selectedModel.value,
-      contents,
-      finalPrompt,
-    )
+    if (uploadType.value === 'api') {
+      // 上传图片
+      const uploadedFile = await uploadFileToAPI(image.value)
+      const contents = createUserContent([
+        createPartFromUri(uploadedFile.uri!, uploadedFile.mimeType!),
+        finalPrompt || '分析这张图片',
+      ])
+      response = await generateContent(
+        selectedModel.value,
+        contents,
+        finalPrompt,
+      )
+      lastImage = uploadedFile.uri!
+    }
+    else {
+      base64Image.value = await fileToBase64(image.value!)
+      const contents: Parameters<typeof generateContent>[1] = [
+        {
+          inlineData: {
+            data: base64Image.value,
+            mimeType: image.value!.type,
+          },
+        },
+        {
+          text: finalPrompt || '分析这张图片',
+        },
+      ]
+      response = await generateContent(
+        selectedModel.value,
+        contents,
+        finalPrompt,
+      )
+      lastImage = base64Image.value
+    }
 
     console.log(response)
     if (response.text === '' || response.text === null || response.text === undefined) {
-      if (response.candidates![0].finishReason === 'PROHIBITED_CONTENT') {
+      if ((response.candidates && response.candidates[0]?.finishReason === 'PROHIBITED_CONTENT')
+        || response.promptFeedback?.blockReason
+      ) {
         errorMsg.value = '内容被安全过滤器阻止，请重试或更换模型。'
       }
       else {
@@ -117,7 +156,7 @@ async function handleAnalyseButtonClick() {
       lastFavoriteResult.value = {
         model: selectedModel.value,
         mode: selectedMode.value,
-        image: base64Image.value,
+        image: lastImage,
         time: Date.now(),
         result: response.text!,
       }
@@ -139,8 +178,9 @@ function handleSaveButtonClick() {
 </script>
 
 <template>
+  {{ googleApiKey }}
   <h1 text-3xl font-bold>
-    上不上 AI 分析
+    上不上 AI 分析系统
   </h1>
 
   <div py-4 />
@@ -160,6 +200,9 @@ function handleSaveButtonClick() {
     上传图片
   </span>
   <ImageUploader v-model="image" />
+
+  <div py-1 />
+  <Select v-model="uploadType" :options="analyseMethodOptions" />
 
   <div py-2 />
   <Button
