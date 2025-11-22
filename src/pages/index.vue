@@ -140,8 +140,14 @@ async function handleAnalyseButtonClick() {
 
     console.log(response)
     if (response.text === '' || response.text === null || response.text === undefined) {
-      if ((response.candidates && response.candidates[0]?.finishReason === 'PROHIBITED_CONTENT')
-        || response.promptFeedback?.blockReason
+      if ((response as any).error?.status === 'RESOURCE_EXHAUSTED') {
+        errorMsg.value = '超出您API Key的配额，请稍后再试。'
+      }
+      else if ((response as any).error?.status === 'FAILED_PRECONDITION') {
+        errorMsg.value = 'Gemini在您的国家/地区不可用。'
+      }
+      else if ((response.candidates && response.candidates[0]?.finishReason === 'PROHIBITED_CONTENT')
+        || response.promptFeedback?.blockReason === 'PROHIBITED_CONTENT'
       ) {
         errorMsg.value = '内容被安全过滤器阻止，请重试或更换模型。'
       }
