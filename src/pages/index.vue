@@ -50,12 +50,10 @@ const analyseMethodOptions = [
 const modelOptions = [
   { label: 'Gemini 2.0 Flash（最推荐）', value: 'gemini-2.0-flash' },
   { label: 'Gemini 2.5 Flash（准确性提升，但容易被 BAN）', value: 'gemini-2.5-flash' },
-  { label: 'Gemini 1.5 Flash（较旧版本）', value: 'gemini-1.5-flash' },
   { label: 'Gemini 2.0 Flash-Lite', value: 'gemini-2.0-flash-lite' },
-  { label: 'Gemini 2.5 Flash-Lite Preview', value: 'gemini-2.5-flash-lite-preview-06-17' },
-  { label: 'Gemini 1.5 Pro（需付费）', value: 'gemini-1.5-pro' },
+  { label: 'Gemini 2.5 Flash-Lite Preview', value: 'gemini-2.5-flash-lite-preview-09-2025' },
   { label: 'Gemini 2.5 Pro（需付费）', value: 'gemini-2.5-pro' },
-  { label: 'Gemma 3', value: 'gemma-3' },
+  { label: 'Gemini 3 Pro（需付费）', value: 'gemini-3-pro-preview' },
 ]
 const modeOptions = computed(() => {
   const options = [
