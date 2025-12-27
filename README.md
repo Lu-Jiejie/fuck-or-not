@@ -17,7 +17,7 @@
 在设置页填入你的 API 密钥，[点此获取](https://aistudio.google.com/app/apikey)。
 
 - **自定义 Prompt**：可为各个模式自定义 Prompt，或添加全新的自定义 Prompt
-- **自定义模型列表**：可添加、编辑或删除模型。[点此查看](https://aistudio.google.com/usage?tab=rate-limit) Gemini 当前支持的模型，也可点击“重置为默认”以获取当前可能的模型列表
+- **自定义模型列表**：可添加、编辑或删除模型。[点此查看](https://aistudio.google.com/usage?tab=rate-limit) Gemini 当前支持的模型，也可点击「重置为默认」以获取当前可能的模型列表
 
 ## 模型
 
