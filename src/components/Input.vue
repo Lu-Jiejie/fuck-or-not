@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 
 const props = withDefaults(defineProps<{
   type?: 'text' | 'password'
+  inputId?: string
 }>(), {
   type: 'text',
 })
@@ -23,9 +24,9 @@ function togglePasswordVisibility() {
 </script>
 
 <template>
-  <div relative>
+  <div relative w-full>
     <input
-      id="input"
+      :id="inputId"
       v-model="modelValue"
       :type="inputType"
       v-bind="$attrs"

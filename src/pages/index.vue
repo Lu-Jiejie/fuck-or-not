@@ -11,7 +11,7 @@ import Button from '~/components/Button.vue'
 import ButtonSelect from '~/components/ButtonSelect.vue'
 import ImageUploader from '~/components/ImageUploader.vue'
 import Select from '~/components/Select.vue'
-import { fileToBase64, generateContent, googleApiKey, uploadFileToAPI } from '~/logic'
+import { fileToBase64, generateContent, googleApiKey, modelOptions, uploadFileToAPI } from '~/logic'
 import { defaultConcisePrompt, defaultDetailedPrompt, defaultNovelPrompt } from '~/logic/prompts'
 
 defineOptions({
@@ -47,16 +47,11 @@ const analyseMethodOptions = [
   { label: '使用 FileAPI 上传图片（适合大于20MB的图片）', value: 'api' },
 ]
 
-const modelOptions = [
-  { label: 'Gemini 2.0 Flash（最推荐）', value: 'gemini-2.0-flash' },
-  { label: 'Gemini 2.5 Flash（准确性提升，但容易被 BAN）', value: 'gemini-2.5-flash' },
-  { label: 'Gemini 1.5 Flash（较旧版本）', value: 'gemini-1.5-flash' },
-  { label: 'Gemini 2.0 Flash-Lite', value: 'gemini-2.0-flash-lite' },
-  { label: 'Gemini 2.5 Flash-Lite Preview', value: 'gemini-2.5-flash-lite-preview-06-17' },
-  { label: 'Gemini 1.5 Pro（需付费）', value: 'gemini-1.5-pro' },
-  { label: 'Gemini 2.5 Pro（需付费）', value: 'gemini-2.5-pro' },
-  { label: 'Gemma 3', value: 'gemma-3' },
-]
+// 将模型字符串数组转换为 Select 组件需要的格式
+const modelSelectOptions = computed(() => {
+  return modelOptions.value.map(model => ({ label: model, value: model }))
+})
+
 const modeOptions = computed(() => {
   const options = [
     { label: '简洁', subLabel: '简短1-2句，够味', value: 'concise' },
@@ -186,7 +181,7 @@ function handleSaveButtonClick() {
   <span label ml-0.5>
     模型
   </span>
-  <Select v-model="selectedModel" :options="modelOptions" />
+  <Select v-model="selectedModel" :options="modelSelectOptions" />
 
   <div py-4 />
   <span label ml-0.5>

@@ -12,6 +12,57 @@ watch(googleApiKey, (key) => {
   ai.value = key ? new GoogleGenAI({ apiKey: key }) : null
 })
 
+// 默认模型列表
+export const defaultModelOptions: string[] = [
+  'gemini-2.5-flash',
+  'gemini-2.5-flash-lite',
+  'gemini-3-flash',
+]
+
+// 数据迁移：将旧格式（对象数组）转换为新格式（字符串数组）
+function migrateModelOptions(): string[] {
+  const stored = localStorage.getItem('model-options')
+  if (stored) {
+    try {
+      const parsed = JSON.parse(stored)
+      // 检查是否是旧格式（对象数组）
+      if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'object' && parsed[0].value) {
+        // 迁移为新格式
+        const migrated = parsed.map((item: { value: string }) => item.value)
+        localStorage.setItem('model-options', JSON.stringify(migrated))
+        return migrated
+      }
+    }
+    catch {
+      // 解析失败，使用默认值
+    }
+  }
+  return [...defaultModelOptions]
+}
+
+// 模型列表存储（初始化为默认值，用户可编辑）
+export const modelOptions = useStorage<string[]>('model-options', migrateModelOptions())
+
+// 添加模型
+export function addModel(model: string) {
+  modelOptions.value.push(model)
+}
+
+// 删除模型
+export function removeModel(index: number) {
+  modelOptions.value.splice(index, 1)
+}
+
+// 更新模型
+export function updateModel(index: number, model: string) {
+  modelOptions.value[index] = model
+}
+
+// 重置为默认模型列表
+export function resetModelOptions() {
+  modelOptions.value = [...defaultModelOptions]
+}
+
 export function generateContent(model: string, contents: ContentListUnion, systemInstruction: string) {
   return ai.value!.models.generateContent({
     model,
