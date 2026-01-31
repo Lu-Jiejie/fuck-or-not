@@ -204,10 +204,6 @@ function onImportSettingsFile(event: Event) {
   reader.readAsText(file)
   input.value = ''
 }
-
-function getProviderLabel(provider: AIProvider): string {
-  return providerOptions.find(p => p.value === provider)?.label || provider
-}
 </script>
 
 <template>
@@ -369,7 +365,7 @@ function getProviderLabel(provider: AIProvider): string {
         <template v-else>
           <div flex-1 min-w-0 flex="~ items-center gap-2">
             <span font-mono text-sm truncate flex-1 class="leading-8">{{ model.id }}</span>
-            <span text-xs op-70 class="w-16 text-right">{{ getProviderLabel(model.provider) }}</span>
+            <span text-xs op-70 class="w-16 text-right">{{ model.provider }}</span>
           </div>
           <div flex="~ gap-1 items-center">
             <button

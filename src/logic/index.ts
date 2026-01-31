@@ -89,7 +89,7 @@ function migrateModelOptions(): ModelOption[] {
         if (typeof parsed[0] === 'string') {
           const migrated = parsed.map((model: string) => ({
             id: model,
-            provider: 'gemini' as AIProvider,
+            provider: 'Gemini' as AIProvider,
           }))
           localStorage.setItem('model-options', JSON.stringify(migrated))
           return migrated
@@ -98,7 +98,7 @@ function migrateModelOptions(): ModelOption[] {
         if (parsed[0].value) {
           const migrated = parsed.map((item: { value: string }) => ({
             id: item.value,
-            provider: 'gemini' as AIProvider,
+            provider: 'Gemini' as AIProvider,
           }))
           localStorage.setItem('model-options', JSON.stringify(migrated))
           return migrated
@@ -112,7 +112,26 @@ function migrateModelOptions(): ModelOption[] {
   return [...defaultModelOptions]
 }
 
-export const modelOptions = useStorage<ModelOption[]>('model-options', migrateModelOptions())
+export const modelOptions = useStorage<ModelOption[]>('model-options', [])
+
+function needsMigration(data: any[]): boolean {
+  if (data.length === 0)
+    return false
+
+  const first = data[0]
+  return typeof first === 'string'
+    || (typeof first === 'object' && !first.provider)
+}
+
+function initializeModelOptions() {
+  const current = modelOptions.value
+
+  if (current.length === 0 || needsMigration(current)) {
+    modelOptions.value = migrateModelOptions()
+  }
+}
+
+initializeModelOptions()
 
 export function addModel(model: ModelOption) {
   modelOptions.value.push(model)
