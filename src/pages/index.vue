@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { FavoriteResult } from '~/types'
+import type { FavoriteResult, ModelOption } from '~/types'
 import {
   createPartFromUri,
   createUserContent,
@@ -12,7 +12,7 @@ import ButtonSelect from '~/components/ButtonSelect.vue'
 import ImageUploader from '~/components/ImageUploader.vue'
 import MarkdownRenderer from '~/components/MarkdownRenderer.vue'
 import Select from '~/components/Select.vue'
-import { fileToBase64, generateContent, googleApiKey, modelOptions, uploadFileToAPI } from '~/logic'
+import { chatgptApiKey, fileToBase64, generateContent, googleApiKey, grokApiKey, modelOptions, uploadFileToAPI } from '~/logic'
 import { defaultConcisePrompt, defaultDetailedPrompt, defaultNovelPrompt } from '~/logic/prompts'
 
 defineOptions({
@@ -26,14 +26,19 @@ const concisePrompt = useStorage('concise-prompt', '')
 const detailedPrompt = useStorage('detailed-prompt', '')
 const novelPrompt = useStorage('novel-prompt', '')
 const customPrompts = useStorage('custom-prompt', '')
-const selectedModel = useStorage('selected-model', 'gemini-2.0-flash')
+const selectedModelId = useStorage('selected-model', 'gemini-2.0-flash')
 const selectedMode = useStorage<'concise' | 'detailed' | 'novel' | 'custom'>('selected-mode', 'novel')
 const uploadType = useStorage<'base64' | 'api'>('upload-type', 'base64')
 const result = ref('')
 const errorMsg = ref('')
 const analyseButtonLoading = ref(false)
+
+const selectedModel = computed<ModelOption | undefined>(() => {
+  return modelOptions.value.find(m => m.id === selectedModelId.value)
+})
+
 const analyseButtonDisabled = computed(() => {
-  return !selectedModel.value || !selectedMode.value || !image.value
+  return !selectedModelId.value || !selectedMode.value || !image.value
 })
 
 const saveButtonDisabled = ref(false)
@@ -47,7 +52,10 @@ const analyseMethodOptions = [
 ]
 
 const modelSelectOptions = computed(() => {
-  return modelOptions.value.map(model => ({ label: model, value: model }))
+  return modelOptions.value.map(model => ({
+    label: `[${model.provider}] ${model.id}`,
+    value: model.id,
+  }))
 })
 
 const modeOptions = computed(() => {
@@ -63,16 +71,37 @@ const modeOptions = computed(() => {
 })
 
 async function handleAnalyseButtonClick() {
-  if (!googleApiKey.value) {
-    errorMsg.value = '请先设置 Google API 密钥。'
+  if (!selectedModel.value) {
+    errorMsg.value = '请先选择模型。'
     return
   }
+
+  const currentProvider = selectedModel.value.provider
+
+  if (currentProvider === 'Gemini' && !googleApiKey.value) {
+    errorMsg.value = '请先设置 Gemini API 密钥。'
+    return
+  }
+  if (currentProvider === 'Grok' && !grokApiKey.value) {
+    errorMsg.value = '请先设置 Grok API 密钥。'
+    return
+  }
+  if (currentProvider === 'ChatGPT' && !chatgptApiKey.value) {
+    errorMsg.value = '请先设置 ChatGPT API 密钥。'
+    return
+  }
+
   if (!image.value) {
     errorMsg.value = '请先上传图片。'
     return
   }
   if (image.value.size > 20 * 1024 * 1024 && uploadType.value === 'base64') {
-    errorMsg.value = '图片大于 20MB，请选择“使用 FileAPI 上传图片”。'
+    errorMsg.value = '图片大于 20MB，请选择"使用 FileAPI 上传图片"。'
+    return
+  }
+
+  if ((currentProvider === 'Grok' || currentProvider === 'ChatGPT') && uploadType.value === 'api') {
+    errorMsg.value = `${currentProvider} 模型暂不支持 FileAPI 上传，请选择"直接传递图片"。`
     return
   }
 
@@ -96,18 +125,18 @@ async function handleAnalyseButtonClick() {
         finalPrompt = customPrompts.value
     }
 
-    if (uploadType.value === 'api') {
+    if (uploadType.value === 'api' && currentProvider === 'Gemini') {
       const uploadedFile = await uploadFileToAPI(image.value)
       const contents = createUserContent([
         createPartFromUri(uploadedFile.uri!, uploadedFile.mimeType!),
         finalPrompt || '分析这张图片',
       ])
       response = await generateContent(
-        selectedModel.value,
+        selectedModel.value.id,
         contents,
         finalPrompt,
+        currentProvider,
       )
-      // Save local base64 for favorites instead of remote URL
       base64Image.value = await fileToBase64(image.value!)
       lastImage = base64Image.value
     }
@@ -125,9 +154,10 @@ async function handleAnalyseButtonClick() {
         },
       ]
       response = await generateContent(
-        selectedModel.value,
+        selectedModel.value.id,
         contents,
         finalPrompt,
+        currentProvider,
       )
       lastImage = base64Image.value
     }
@@ -135,7 +165,7 @@ async function handleAnalyseButtonClick() {
     console.log(response)
     if (response.text === '' || response.text === null || response.text === undefined) {
       if ((response.candidates && response.candidates[0]?.finishReason === 'PROHIBITED_CONTENT')
-        || response.promptFeedback?.blockReason
+        || (response as any).promptFeedback?.blockReason
       ) {
         errorMsg.value = '内容被安全过滤器阻止，请重试或更换模型。'
       }
@@ -148,7 +178,7 @@ async function handleAnalyseButtonClick() {
       result.value = response.text!
       errorMsg.value = ''
       lastFavoriteResult.value = {
-        model: selectedModel.value,
+        model: selectedModel.value.id,
         mode: selectedMode.value,
         image: lastImage,
         time: Date.now(),
@@ -180,7 +210,7 @@ function handleSaveButtonClick() {
   <span label ml-0.5>
     模型
   </span>
-  <Select v-model="selectedModel" :options="modelSelectOptions" />
+  <Select v-model="selectedModelId" :options="modelSelectOptions" />
 
   <div py-4 />
   <span label ml-0.5>
