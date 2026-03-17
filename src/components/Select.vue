@@ -3,6 +3,7 @@ import { watchEffect } from 'vue'
 
 const props = defineProps<{
   options?: { label: string, value: string | number }[]
+  type?: 'inline' | 'block'
 }>()
 
 const modelValue = defineModel<string | number>()
@@ -18,8 +19,8 @@ watchEffect(() => {
   <select
     v-model="modelValue"
     v-bind="$attrs"
-    p="l-3 r-7 y-0.8"
-
+    :p="props.type === 'inline' ? 'l-3 r-7 y-0.8' : 'x-4 y-2'"
+    :class="props.type === 'inline' ? '' : 'w-full'"
     text="left"
     border="~ rounded base hover-base focus-base"
     outline="none active:none"
