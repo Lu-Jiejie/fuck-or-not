@@ -18,8 +18,8 @@ watchEffect(() => {
   <select
     v-model="modelValue"
     v-bind="$attrs"
-    p="x-4 y-2"
-    w-full
+    p="l-3 r-7 y-0.8"
+
     text="left"
     border="~ rounded base hover-base focus-base"
     outline="none active:none"

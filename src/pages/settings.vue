@@ -336,7 +336,7 @@ function onImportSettingsFile(event: Event) {
             outline="none"
             class="h-8"
           >
-          <Select v-model="editingProvider" :options="providerOptions" class="w-28" />
+          <Select v-model="editingProvider" :options="providerOptions" />
           <div flex="~ gap-1 items-center">
             <button
               p-2 rounded cursor-pointer
