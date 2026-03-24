@@ -1,233 +1,66 @@
 <script setup lang="ts">
-import type { FavoriteResult, ModelOption } from '~/types'
-import {
-  createPartFromUri,
-  createUserContent,
-} from '@google/genai'
-import { useStorage } from '@vueuse/core'
-import { useIDBKeyval } from '@vueuse/integrations/useIDBKeyval'
-import { computed, ref } from 'vue'
 import Button from '~/components/Button.vue'
 import ButtonSelect from '~/components/ButtonSelect.vue'
 import ImageUploader from '~/components/ImageUploader.vue'
 import MarkdownRenderer from '~/components/MarkdownRenderer.vue'
 import Select from '~/components/Select.vue'
-import { chatgptApiKey, fileToBase64, generateContent, googleApiKey, grokApiKey, modelOptions, uploadFileToAPI } from '~/logic'
-import { defaultConcisePrompt, defaultDetailedPrompt, defaultNovelPrompt } from '~/logic/prompts'
+import { useAnalyse } from '~/composables/useAnalyse'
 
 defineOptions({
   name: 'IndexPage',
 })
 
-const image = ref<File | null>(null)
-const base64Image = ref<string | null>(null)
-
-const concisePrompt = useStorage('concise-prompt', '')
-const detailedPrompt = useStorage('detailed-prompt', '')
-const novelPrompt = useStorage('novel-prompt', '')
-const customPrompts = useStorage('custom-prompt', '')
-const selectedModelId = useStorage('selected-model', 'gemini-2.0-flash')
-const selectedMode = useStorage<'concise' | 'detailed' | 'novel' | 'custom'>('selected-mode', 'novel')
-const uploadType = useStorage<'base64' | 'api'>('upload-type', 'base64')
-const result = ref('')
-const errorMsg = ref('')
-const analyseButtonLoading = ref(false)
-
-const selectedModel = computed<ModelOption | undefined>(() => {
-  return modelOptions.value.find(m => m.id === selectedModelId.value)
-})
-
-const analyseButtonDisabled = computed(() => {
-  return !selectedModelId.value || !selectedMode.value || !image.value
-})
-
-const saveButtonDisabled = ref(false)
-
-const favoriteResults = useIDBKeyval('favorite-results', [] as FavoriteResult[])
-const lastFavoriteResult = ref<FavoriteResult | null>(null)
-
-const analyseMethodOptions = [
-  { label: '直接传递图片', value: 'base64' },
-  { label: '使用 FileAPI 上传图片（适合大于20MB的图片）', value: 'api' },
-]
-
-const modelSelectOptions = computed(() => {
-  return modelOptions.value.map(model => ({
-    label: `[${model.provider}] ${model.id}`,
-    value: model.id,
-  }))
-})
-
-const modeOptions = computed(() => {
-  const options = [
-    { label: '简洁', subLabel: '简短1-2句，够味', value: 'concise' },
-    { label: '详细', subLabel: '细嗦3+句，够劲', value: 'detailed' },
-    { label: '小说', subLabel: '400字以上，够硬核', value: 'novel' },
-  ]
-  if (customPrompts.value !== '') {
-    options.push({ label: '自定义', subLabel: 'XP，够自由', value: 'custom' })
-  }
-  return options
-})
-
-async function handleAnalyseButtonClick() {
-  if (!selectedModel.value) {
-    errorMsg.value = '请先选择模型。'
-    return
-  }
-
-  const currentProvider = selectedModel.value.provider
-
-  if (currentProvider === 'Gemini' && !googleApiKey.value) {
-    errorMsg.value = '请先设置 Gemini API 密钥。'
-    return
-  }
-  if (currentProvider === 'Grok' && !grokApiKey.value) {
-    errorMsg.value = '请先设置 Grok API 密钥。'
-    return
-  }
-  if (currentProvider === 'ChatGPT' && !chatgptApiKey.value) {
-    errorMsg.value = '请先设置 ChatGPT API 密钥。'
-    return
-  }
-
-  if (!image.value) {
-    errorMsg.value = '请先上传图片。'
-    return
-  }
-  if (image.value.size > 20 * 1024 * 1024 && uploadType.value === 'base64') {
-    errorMsg.value = '图片大于 20MB，请选择"使用 FileAPI 上传图片"。'
-    return
-  }
-
-  if ((currentProvider === 'Grok' || currentProvider === 'ChatGPT') && uploadType.value === 'api') {
-    errorMsg.value = `${currentProvider} 模型暂不支持 FileAPI 上传，请选择"直接传递图片"。`
-    return
-  }
-
-  analyseButtonLoading.value = true
-
-  try {
-    let response
-    let lastImage
-    let finalPrompt = ''
-    switch (selectedMode.value) {
-      case 'concise':
-        finalPrompt = concisePrompt.value || defaultConcisePrompt
-        break
-      case 'detailed':
-        finalPrompt = detailedPrompt.value || defaultDetailedPrompt
-        break
-      case 'novel':
-        finalPrompt = novelPrompt.value || defaultNovelPrompt
-        break
-      default:
-        finalPrompt = customPrompts.value
-    }
-
-    if (uploadType.value === 'api' && currentProvider === 'Gemini') {
-      const uploadedFile = await uploadFileToAPI(image.value)
-      const contents = createUserContent([
-        createPartFromUri(uploadedFile.uri!, uploadedFile.mimeType!),
-        finalPrompt || '分析这张图片',
-      ])
-      response = await generateContent(
-        selectedModel.value.id,
-        contents,
-        finalPrompt,
-        currentProvider,
-      )
-      base64Image.value = await fileToBase64(image.value!)
-      lastImage = base64Image.value
-    }
-    else {
-      base64Image.value = await fileToBase64(image.value!)
-      const contents: Parameters<typeof generateContent>[1] = [
-        {
-          inlineData: {
-            data: base64Image.value,
-            mimeType: image.value!.type,
-          },
-        },
-        {
-          text: finalPrompt || '分析这张图片',
-        },
-      ]
-      response = await generateContent(
-        selectedModel.value.id,
-        contents,
-        finalPrompt,
-        currentProvider,
-      )
-      lastImage = base64Image.value
-    }
-
-    console.log(response)
-    if (response.text === '' || response.text === null || response.text === undefined) {
-      if ((response.candidates && response.candidates[0]?.finishReason === 'PROHIBITED_CONTENT')
-        || (response as any).promptFeedback?.blockReason
-      ) {
-        errorMsg.value = '内容被安全过滤器阻止，请重试或更换模型。'
-      }
-      else {
-        errorMsg.value = '发生未知错误，请稍后再试或检查控制台日志。'
-      }
-    }
-    else {
-      saveButtonDisabled.value = false
-      result.value = response.text!
-      errorMsg.value = ''
-      lastFavoriteResult.value = {
-        model: selectedModel.value.id,
-        mode: selectedMode.value,
-        image: lastImage,
-        time: Date.now(),
-        result: response.text!,
-      }
-    }
-  }
-  catch (error) {
-    console.error(error)
-    errorMsg.value = '发生错误，请稍后再试或检查控制台日志。'
-  }
-  finally {
-    analyseButtonLoading.value = false
-  }
-}
-
-function handleSaveButtonClick() {
-  saveButtonDisabled.value = true
-  favoriteResults.data.value.unshift(lastFavoriteResult.value!)
-}
+const {
+  image,
+  selectedModelId,
+  selectedMode,
+  selectedModel,
+  uploadType,
+  result,
+  errorMsg,
+  analyseButtonLoading,
+  analyseButtonDisabled,
+  saveButtonDisabled,
+  modelSelectOptions,
+  modeOptions,
+  analyseMethodOptions,
+  handleAnalyseButtonClick,
+  handleSaveButtonClick,
+} = useAnalyse()
 </script>
 
 <template>
-  <h1 text-3xl font-bold>
-    Fuck or Not
-  </h1>
+  <div mb-6 text-left px-1>
+    <h1 text-3xl font-bold>
+      Fuck or Not
+    </h1>
+    <p text-sm op-50 mt-1>
+      上还是不上？
+    </p>
+  </div>
 
-  <div py-4 />
-  <span label ml-0.5>
-    模型
-  </span>
-  <Select v-model="selectedModelId" :options="modelSelectOptions" />
+  <!-- 配置区 -->
+  <div mb-4 rounded-xl border="~ base" bg="white dark:black" p-6 text-left>
+    <div mb-5>
+      <span label ml-0.5>模型</span>
+      <Select v-model="selectedModelId" :options="modelSelectOptions" />
+    </div>
+    <div>
+      <span label ml-0.5>模式</span>
+      <ButtonSelect v-model="selectedMode" :options="modeOptions" />
+    </div>
+  </div>
 
-  <div py-4 />
-  <span label ml-0.5>
-    模式
-  </span>
-  <ButtonSelect v-model="selectedMode" :options="modeOptions" />
+  <!-- 上传区 -->
+  <div mb-4 rounded-xl border="~ base" bg="white dark:black" p-6 text-left>
+    <div :class="selectedModel?.provider === 'Gemini' ? 'mb-4' : ''">
+      <span label ml-0.5>上传图片</span>
+      <ImageUploader v-model="image" />
+    </div>
+    <Select v-if="selectedModel?.provider === 'Gemini'" v-model="uploadType" :options="analyseMethodOptions" />
+  </div>
 
-  <div py-4 />
-  <span label ml-0.5>
-    上传图片
-  </span>
-  <ImageUploader v-model="image" />
-
-  <div py-1 />
-  <Select v-model="uploadType" :options="analyseMethodOptions" />
-
-  <div py-2 />
+  <!-- 分析按钮 -->
   <Button
     :loading="analyseButtonLoading" :disabled="analyseButtonDisabled"
     :disable-on-loading="true"
@@ -236,38 +69,41 @@ function handleSaveButtonClick() {
     分析
   </Button>
 
-  <div py-4 />
-  <span v-show="result !== '' || errorMsg !== ''" label ml-0.5>
-    分析结果
-  </span>
+  <!-- 结果区 -->
+  <template v-if="result !== '' || errorMsg !== ''">
+    <div mt-4 rounded-xl border="~ base" bg="white dark:black" p-6 text-left>
+      <div flex="~ items-center gap-2" mb-4>
+        <div
+          w-1 h-6 rounded-full
+          :class="errorMsg !== '' ? 'bg-red-500' : 'bg-teal-500'"
+        />
+        <span text-lg font-semibold>分析结果</span>
+      </div>
 
-  <div
-    v-show="errorMsg !== ''"
-    p="x-4 y-3"
-    border="~ base hover-base rounded"
-    whitespace-pre-wrap text-left font-bold
-    bg-red-400
-  >
-    {{ errorMsg }}
-  </div>
-  <div v-show="result !== '' && errorMsg !== ''" py-1 />
-  <div
-    v-show="result !== ''"
-    p="x-4 y-3" select-text
-    border="~ base hover-base rounded"
-    bg="light dark:dark"
-    text-left
-  >
-    <MarkdownRenderer :content="result" />
-  </div>
-  <div v-show="result !== ''">
-    <div py-2 />
-    <Button
-      :disabled="saveButtonDisabled" disabled-text="已保存"
-      @click="handleSaveButtonClick"
-    >
-      保存结果
-    </Button>
-  </div>
-  <div v-show="result !== '' || errorMsg !== ''" py-4 />
+      <div
+        v-if="errorMsg !== ''"
+        p="x-4 y-3" rounded-lg
+        whitespace-pre-wrap font-bold
+        class="bg-red-400 text-white"
+      >
+        {{ errorMsg }}
+      </div>
+
+      <div
+        v-if="result !== ''"
+        select-text
+      >
+        <MarkdownRenderer :content="result" />
+      </div>
+    </div>
+
+    <div v-if="result !== ''" mt-3>
+      <Button
+        :disabled="saveButtonDisabled" disabled-text="已保存"
+        @click="handleSaveButtonClick"
+      >
+        保存结果
+      </Button>
+    </div>
+  </template>
 </template>

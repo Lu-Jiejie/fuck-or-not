@@ -2,7 +2,6 @@
 import type { AIProvider, ModelOption } from '~/types'
 import { useStorage } from '@vueuse/core'
 import { nextTick, ref } from 'vue'
-import Button from '~/components/Button.vue'
 import Input from '~/components/Input.vue'
 import Select from '~/components/Select.vue'
 import Textarea from '~/components/Textarea.vue'
@@ -62,36 +61,6 @@ const providerOptions = [
   { label: 'Grok', value: 'Grok' },
   { label: 'ChatGPT', value: 'ChatGPT' },
 ]
-
-function startAdding() {
-  isAdding.value = true
-  newModelId.value = ''
-  newModelProvider.value = 'Gemini'
-  nextTick(() => {
-    addingInputRef.value?.focus()
-  })
-}
-
-function cancelAdding() {
-  isAdding.value = false
-  newModelId.value = ''
-  newModelProvider.value = 'Gemini'
-}
-
-function saveAdding() {
-  if (!newModelId.value.trim()) {
-    alert('请填写模型 ID')
-    return
-  }
-  addModel({ id: newModelId.value.trim(), provider: newModelProvider.value })
-  cancelAdding()
-}
-
-function handleRemoveModel(index: number) {
-  if (confirm('确定要删除这个模型吗？')) {
-    removeModel(index)
-  }
-}
 
 function startEditing(index: number, model: ModelOption) {
   editingIndex.value = index
@@ -204,35 +173,72 @@ function onImportSettingsFile(event: Event) {
   reader.readAsText(file)
   input.value = ''
 }
+
+function startAdding() {
+  isAdding.value = true
+  newModelId.value = ''
+  newModelProvider.value = 'Gemini'
+  nextTick(() => {
+    addingInputRef.value?.focus()
+  })
+}
+
+function cancelAdding() {
+  isAdding.value = false
+  newModelId.value = ''
+}
+
+function saveAdding() {
+  if (!newModelId.value.trim()) {
+    alert('请填写模型 ID')
+    return
+  }
+  addModel({ id: newModelId.value.trim(), provider: newModelProvider.value })
+  cancelAdding()
+}
+
+function handleRemoveModel(index: number) {
+  if (confirm('确定要删除该模型吗？')) {
+    removeModel(index)
+  }
+}
 </script>
 
 <template>
-  <h1 text-3xl font-bold>
-    设置
-  </h1>
+  <div mb-6 text-left px-1>
+    <h1 text-3xl font-bold>
+      设置
+    </h1>
+    <p text-sm op-50 mt-1>
+      管理 API 密钥、模型和 Prompt 配置
+    </p>
+  </div>
 
   <!-- Gemini 配置 -->
-  <div py-6>
-    <h2 text-2xl font-semibold mb-1 text-teal-600>
-      Gemini 配置
-    </h2>
+  <div mb-4 rounded-xl border="~ base" bg="white dark:black" p-6 text-left>
+    <div flex="~ items-center gap-2" mb-5>
+      <div w-1 h-6 rounded-full class="bg-teal-500" />
+      <h2 text-lg font-semibold>
+        Gemini 配置
+      </h2>
+    </div>
 
-    <div py-2>
+    <div mb-4>
       <span label ml-0.5>
-        Gemini API 秘钥
+        API 密钥
         <a
           href="https://aistudio.google.com/app/apikey"
           target="_blank"
-          ml-1 underline cursor-pointer op-70
+          ml-1 underline cursor-pointer op-60 hover:op-100 transition-opacity
         >此处获取</a>
       </span>
       <Input v-model="googleApiKey" type="password" />
     </div>
 
-    <div py-3>
+    <div>
       <span label ml-0.5>
-        Gemini API 地址
-        <span ml-1 text-sm op-70>(留空使用默认地址)</span>
+        API 地址
+        <span ml-1 text-xs op-50>(留空使用默认地址)</span>
       </span>
       <Input
         v-model="geminiApiUrl"
@@ -243,27 +249,30 @@ function onImportSettingsFile(event: Event) {
   </div>
 
   <!-- Grok 配置 -->
-  <div py-6>
-    <h2 text-2xl font-semibold mb-1 text-purple-600>
-      Grok 配置
-    </h2>
+  <div mb-4 rounded-xl border="~ base" bg="white dark:black" p-6 text-left>
+    <div flex="~ items-center gap-2" mb-5>
+      <div w-1 h-6 rounded-full class="bg-purple-500" />
+      <h2 text-lg font-semibold>
+        Grok 配置
+      </h2>
+    </div>
 
-    <div py-2>
+    <div mb-4>
       <span label ml-0.5>
-        Grok API 秘钥
+        API 密钥
         <a
           href="https://console.x.ai/"
           target="_blank"
-          ml-1 underline cursor-pointer op-70
+          ml-1 underline cursor-pointer op-60 hover:op-100 transition-opacity
         >此处获取</a>
       </span>
       <Input v-model="grokApiKey" type="password" />
     </div>
 
-    <div py-3>
+    <div>
       <span label ml-0.5>
-        Grok API 地址
-        <span ml-1 text-sm op-70>(留空使用默认地址)</span>
+        API 地址
+        <span ml-1 text-xs op-50>(留空使用默认地址)</span>
       </span>
       <Input
         v-model="grokApiUrl"
@@ -274,27 +283,30 @@ function onImportSettingsFile(event: Event) {
   </div>
 
   <!-- ChatGPT 配置 -->
-  <div py-6>
-    <h2 text-2xl font-semibold mb-1 text-green-600>
-      ChatGPT 配置
-    </h2>
+  <div mb-4 rounded-xl border="~ base" bg="white dark:black" p-6 text-left>
+    <div flex="~ items-center gap-2" mb-5>
+      <div w-1 h-6 rounded-full class="bg-green-500" />
+      <h2 text-lg font-semibold>
+        ChatGPT 配置
+      </h2>
+    </div>
 
-    <div py-2>
+    <div mb-4>
       <span label ml-0.5>
-        ChatGPT API 秘钥
+        API 密钥
         <a
           href="https://platform.openai.com/api-keys"
           target="_blank"
-          ml-1 underline cursor-pointer op-70
+          ml-1 underline cursor-pointer op-60 hover:op-100 transition-opacity
         >此处获取</a>
       </span>
       <Input v-model="chatgptApiKey" type="password" />
     </div>
 
-    <div py-3>
+    <div>
       <span label ml-0.5>
-        ChatGPT API 地址
-        <span ml-1 text-sm op-70>(留空使用默认地址)</span>
+        API 地址
+        <span ml-1 text-xs op-50>(留空使用默认地址)</span>
       </span>
       <Input
         v-model="chatgptApiUrl"
@@ -304,74 +316,87 @@ function onImportSettingsFile(event: Event) {
     </div>
   </div>
 
-  <!-- 模型配置 -->
-  <div py-6>
-    <h2 text-2xl font-semibold mb-1>
-      模型列表
-    </h2>
+  <!-- 模型列表 -->
+  <div mb-4 rounded-xl border="~ base" bg="white dark:black" p-6 text-left>
+    <div flex="~ items-center justify-between" mb-5>
+      <div flex="~ items-center gap-2">
+        <div w-1 h-6 rounded-full bg-gray-400 />
+        <h2 text-lg font-semibold>
+          模型列表
+        </h2>
+      </div>
+      <button
+        text-sm op-60 hover:op-100 underline cursor-pointer transition-opacity
+        @click="handleResetModels"
+      >
+        重置为默认
+      </button>
+    </div>
 
-    <span label ml-0.5>
-      自定义模型
-      <a
-        ml-1 underline cursor-pointer op-70
-        @click.prevent="handleResetModels"
-      >重置为默认</a>
-    </span>
-    <div
-      border="~ base rounded"
-      bg="light dark:dark"
-      p="x-4"
-    >
-      <div v-for="(model, index) in modelOptions" :key="index" py-2 flex="~ items-center gap-2" border="b base">
+    <div rounded-lg border="~ base" overflow-hidden>
+      <div
+        v-for="(model, index) in modelOptions"
+        :key="index"
+        px-4 py-2.5 flex="~ items-center gap-2"
+        border="b base"
+        class="last:border-b-0"
+      >
         <template v-if="editingIndex === index">
-          <input
-            ref="editingInputRef"
-            v-model="editingModelId"
-            type="text"
-            placeholder="模型 ID"
-            font-mono text-sm flex-1 min-w-0
-            p="x-2 y-1"
-            bg="transparent"
-            border="~ rounded base focus:teal-600"
-            outline="none"
-            class="h-8"
-          >
-          <Select v-model="editingProvider" :options="providerOptions" type="inline" />
-          <div flex="~ gap-1 items-center">
-            <button
-              p-2 rounded cursor-pointer
-              text-white
-              transition-colors duration-200
-              class="bg-teal-600 hover:bg-teal-700 h-8 w-8"
-              flex items-center justify-center
-              title="保存"
-              @click="saveEditing(index)"
+          <div flex="~ col gap-2" w-full>
+            <input
+              ref="editingInputRef"
+              v-model="editingModelId"
+              type="text"
+              placeholder="模型 ID"
+              font-mono text-sm w-full
+              p="x-2 y-1"
+              bg="transparent"
+              border="~ rounded base focus:teal-600"
+              outline="none"
+              class="h-8"
             >
-              <div i-carbon-checkmark />
-            </button>
-            <button
-              p-2 rounded cursor-pointer
-              text-white
-              transition-colors duration-200
-              class="bg-gray-500 hover:bg-gray-600 h-8 w-8"
-              flex items-center justify-center
-              title="取消"
-              @click="cancelEditing"
-            >
-              <div i-carbon-close />
-            </button>
+            <div flex="~ items-center gap-2">
+              <Select v-model="editingProvider" :options="providerOptions" type="inline" flex-1 />
+              <div flex="~ gap-1 items-center">
+                <button
+                  p-2 rounded cursor-pointer text-white transition-colors duration-200
+                  class="bg-teal-600 hover:bg-teal-700 h-8 w-8"
+                  flex items-center justify-center
+                  title="保存"
+                  @click="saveEditing(index)"
+                >
+                  <div i-carbon-checkmark />
+                </button>
+                <button
+                  p-2 rounded cursor-pointer text-white transition-colors duration-200
+                  class="bg-gray-500 hover:bg-gray-600 h-8 w-8"
+                  flex items-center justify-center
+                  title="取消"
+                  @click="cancelEditing"
+                >
+                  <div i-carbon-close />
+                </button>
+              </div>
+            </div>
           </div>
         </template>
         <template v-else>
           <div flex-1 min-w-0 flex="~ items-center gap-2">
             <span font-mono text-sm truncate flex-1 class="leading-8">{{ model.id }}</span>
-            <span text-xs op-70 class="w-16 text-right">{{ model.provider }}</span>
+            <span
+              text-xs px-2 py-0.5 rounded-full font-medium
+              :class="{
+                'bg-teal-100 text-teal-700 dark:bg-teal-900 dark:text-teal-300': model.provider === 'Gemini',
+                'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300': model.provider === 'Grok',
+                'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300': model.provider === 'ChatGPT',
+              }"
+            >
+              {{ model.provider }}
+            </span>
           </div>
           <div flex="~ gap-1 items-center">
             <button
-              p-2 rounded cursor-pointer
-              text-white
-              transition-colors duration-200
+              p-2 rounded cursor-pointer text-white transition-colors duration-200
               class="bg-teal-600 hover:bg-teal-700 h-8 w-8"
               flex items-center justify-center
               title="编辑"
@@ -380,9 +405,7 @@ function onImportSettingsFile(event: Event) {
               <div i-carbon-edit />
             </button>
             <button
-              p-2 rounded cursor-pointer
-              text-white
-              transition-colors duration-200
+              p-2 rounded cursor-pointer text-white transition-colors duration-200
               class="bg-red-400 hover:bg-red-500 h-8 w-8"
               flex items-center justify-center
               title="删除"
@@ -393,59 +416,56 @@ function onImportSettingsFile(event: Event) {
           </div>
         </template>
       </div>
+
       <!-- 添加新模型行 -->
-      <div py-2 flex="~ items-center gap-2">
+      <div px-4 py-2.5 flex="~ items-center gap-2">
         <template v-if="isAdding">
-          <input
-            ref="addingInputRef"
-            v-model="newModelId"
-            type="text"
-            placeholder="模型 ID（如 gemini-2.5-flash）"
-            font-mono text-sm flex-1 min-w-0
-            p="x-2 y-1"
-            bg="transparent"
-            border="~ rounded base focus:teal-600"
-            outline="none"
-            class="h-8"
-          >
-          <Select v-model="newModelProvider" :options="providerOptions" class="w-28" />
-          <div flex="~ gap-1 items-center">
-            <button
-              p-2 rounded cursor-pointer
-              text-white
-              transition-colors duration-200
-              class="bg-teal-600 hover:bg-teal-700 h-8 w-8"
-              flex items-center justify-center
-              title="保存"
-              @click="saveAdding"
+          <div flex="~ col gap-2" w-full>
+            <input
+              ref="addingInputRef"
+              v-model="newModelId"
+              type="text"
+              placeholder="模型 ID（如 gemini-2.5-flash）"
+              font-mono text-sm w-full
+              p="x-2 y-1"
+              bg="transparent"
+              border="~ rounded base focus:teal-600"
+              outline="none"
+              class="h-8"
             >
-              <div i-carbon-checkmark />
-            </button>
-            <button
-              p-2 rounded cursor-pointer
-              text-white
-              transition-colors duration-200
-              class="bg-gray-500 hover:bg-gray-600 h-8 w-8"
-              flex items-center justify-center
-              title="取消"
-              @click="cancelAdding"
-            >
-              <div i-carbon-close />
-            </button>
+            <div flex="~ items-center gap-2">
+              <Select v-model="newModelProvider" :options="providerOptions" type="inline" flex-1 />
+              <div flex="~ gap-1 items-center">
+                <button
+                  p-2 rounded cursor-pointer text-white transition-colors duration-200
+                  class="bg-teal-600 hover:bg-teal-700 h-8 w-8"
+                  flex items-center justify-center
+                  title="保存"
+                  @click="saveAdding"
+                >
+                  <div i-carbon-checkmark />
+                </button>
+                <button
+                  p-2 rounded cursor-pointer text-white transition-colors duration-200
+                  class="bg-gray-500 hover:bg-gray-600 h-8 w-8"
+                  flex items-center justify-center
+                  title="取消"
+                  @click="cancelAdding"
+                >
+                  <div i-carbon-close />
+                </button>
+              </div>
+            </div>
           </div>
         </template>
         <template v-else>
-          <span flex-1 min-w-0 class="leading-8" text-gray-400 op-50 font-mono text-sm>...</span>
           <button
-            p-2 rounded cursor-pointer
-            text-white
-            transition-colors duration-200
-            class="bg-teal-600 hover:bg-teal-700 h-8 w-8"
-            flex items-center justify-center
-            title="添加新模型"
+            flex="~ items-center gap-1.5" text-sm op-60 hover:op-100
+            cursor-pointer transition-opacity
             @click="startAdding"
           >
             <div i-carbon-add />
+            添加模型
           </button>
         </template>
       </div>
@@ -453,63 +473,60 @@ function onImportSettingsFile(event: Event) {
   </div>
 
   <!-- Prompt 配置 -->
-  <div py-6>
-    <h2 text-2xl font-semibold mb-1>
-      Prompt 配置
-    </h2>
+  <div mb-4 rounded-xl border="~ base" bg="white dark:black" p-6 text-left>
+    <div flex="~ items-center gap-2" mb-5>
+      <div w-1 h-6 rounded-full class="bg-orange-500" />
+      <h2 text-lg font-semibold>
+        Prompt 配置
+      </h2>
+    </div>
 
-    <div py-2>
+    <div mb-5>
       <span label ml-0.5>
         简洁模式 Prompt
         <a
-          target="_blank"
-          ml-1 underline cursor-pointer op-70
+          ml-1 underline cursor-pointer op-60 hover:op-100 transition-opacity
           @click.prevent="getDefaultPrompt(0)"
-        >获取默认 Prompt</a>
+        >获取默认</a>
         <a
-          target="_blank"
-          ml-2 underline cursor-pointer opacity-70
+          ml-2 underline cursor-pointer op-60 hover:op-100 transition-opacity
           @click.prevent="clearPrompt(0)"
         >清空</a>
       </span>
       <Textarea v-model="concisePrompt" placeholder="留空将使用默认配置......" />
     </div>
 
-    <div py-4>
+    <div mb-5>
       <span label ml-0.5>
         详细模式 Prompt
         <a
-          target="_blank"
-          ml-1 underline cursor-pointer op-70
+          ml-1 underline cursor-pointer op-60 hover:op-100 transition-opacity
           @click.prevent="getDefaultPrompt(1)"
-        >获取默认 Prompt</a>
+        >获取默认</a>
         <a
-          target="_blank"
-          ml-2 underline cursor-pointer op-70
+          ml-2 underline cursor-pointer op-60 hover:op-100 transition-opacity
           @click.prevent="clearPrompt(1)"
         >清空</a>
       </span>
       <Textarea v-model="detailedPrompt" placeholder="留空将使用默认配置......" />
     </div>
 
-    <div py-4>
+    <div mb-5>
       <span label ml-0.5>
         小说模式 Prompt
         <a
-          target="_blank"
-          ml-1 underline cursor-pointer op-70
+          ml-1 underline cursor-pointer op-60 hover:op-100 transition-opacity
           @click.prevent="getDefaultPrompt(2)"
-        >获取默认 Prompt</a>
+        >获取默认</a>
         <a
-          target="_blank"
-          ml-2 underline cursor-pointer op-70
+          ml-2 underline cursor-pointer op-60 hover:op-100 transition-opacity
           @click.prevent="clearPrompt(2)"
         >清空</a>
       </span>
       <Textarea v-model="novelPrompt" placeholder="留空将使用默认配置......" />
     </div>
 
-    <div py-4>
+    <div>
       <span label ml-0.5>
         自定义模式 Prompt
       </span>
@@ -518,18 +535,33 @@ function onImportSettingsFile(event: Event) {
   </div>
 
   <!-- 设置管理 -->
-  <div py-6>
-    <h2 text-2xl font-semibold mb-3>
-      设置管理
-    </h2>
+  <div mb-4 rounded-xl border="~ base" bg="white dark:black" p-6 text-left>
+    <div flex="~ items-center gap-2" mb-5>
+      <div w-1 h-6 rounded-full bg-gray-400 />
+      <h2 text-lg font-semibold>
+        设置管理
+      </h2>
+    </div>
 
-    <div flex="~ gap-4 wrap">
-      <Button @click="onImportSettingsClick">
+    <div flex="~ gap-3 wrap">
+      <button
+        flex="~ items-center gap-2" px-4 py-2 rounded-lg text-sm font-medium
+        border="~ base" cursor-pointer transition-colors duration-200
+        hover:bg-gray-100 dark:hover:bg-gray-900
+        @click="onImportSettingsClick"
+      >
+        <div i-carbon-upload />
         导入设置
-      </Button>
-      <Button @click="onExportSettings">
+      </button>
+      <button
+        flex="~ items-center gap-2" px-4 py-2 rounded-lg text-sm font-medium
+        border="~ base" cursor-pointer transition-colors duration-200
+        hover:bg-gray-100 dark:hover:bg-gray-900
+        @click="onExportSettings"
+      >
+        <div i-carbon-download />
         导出设置
-      </Button>
+      </button>
     </div>
 
     <input

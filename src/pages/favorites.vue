@@ -3,7 +3,6 @@ import type { FavoriteResult } from '~/types'
 import { useMediaQuery, useStorage } from '@vueuse/core'
 import { useIDBKeyval } from '@vueuse/integrations/useIDBKeyval'
 import { computed, nextTick, ref } from 'vue'
-import Button from '~/components/Button.vue'
 import FavoritesItem from '~/components/FavoritesItem.vue'
 import Pagination from '~/components/Pagination.vue'
 
@@ -136,10 +135,14 @@ function onImportFile(event: Event) {
 </script>
 
 <template>
-  <h1 text-3xl font-bold>
-    收藏夹
-  </h1>
-  <div py-4 />
+  <div mb-6 text-left px-1>
+    <h1 text-3xl font-bold>
+      收藏夹
+    </h1>
+    <p text-sm op-50 mt-1>
+      浏览和管理你保存的分析结果
+    </p>
+  </div>
 
   <Transition name="fade">
     <div
@@ -159,41 +162,42 @@ function onImportFile(event: Event) {
 
       <!-- has data -->
       <template v-else-if="favoriteResults.data.value.length > 0">
-        <div flex flex-col items-center gap-2>
-          <Pagination
-            ref="paginationRef"
-            v-model="page"
-            :page-size="pageSize"
-            :total="favoriteResults.data.value.length"
-          />
-          <div flex items-center gap-4>
+        <!-- 工具栏 -->
+        <div
+          mb-4 rounded-xl border="~ base" bg="white dark:black" px-4 py-3
+          flex="~ items-center justify-between gap-2 wrap"
+        >
+          <div flex="~ items-center gap-3">
+            <Pagination
+              ref="paginationRef"
+              v-model="page"
+              :page-size="pageSize"
+              :total="favoriteResults.data.value.length"
+            />
             <div v-if="pageCount > 5" flex items-center gap-1 text-sm>
               <input
                 v-model="jumpInput"
                 type="text"
                 inputmode="numeric"
                 :placeholder="String(page)"
-                class="w-10 px-1 py-0.5 text-center rounded outline-none transition-colors duration-200 border border-base bg-light dark:bg-dark focus:border-teal-600"
+                class="w-10 px-1 py-0.5 text-center rounded outline-none transition-colors duration-200 border border-base bg-transparent focus:border-teal-600"
                 @keyup.enter="handleJump"
               >
               <span opacity-60>/ {{ pageCount }}</span>
             </div>
-            <button
-              type="button"
-              flex items-center gap-1 px-2 py-1
-              border="~ base rounded"
-              bg="light dark:dark"
-              text-sm cursor-pointer
-              hover:border-teal-600
-              transition-colors duration-200
-              @click="toggleSortOrder"
-            >
-              <div :class="sortOrder === 'newest' ? 'i-carbon-arrow-down' : 'i-carbon-arrow-up'" />
-              {{ sortOrder === 'newest' ? '最新' : '最旧' }}
-            </button>
           </div>
+          <button
+            type="button"
+            flex items-center gap-1.5 px-3 py-1.5
+            border="~ base rounded-lg"
+            text-sm cursor-pointer
+            hover:border-teal-600 transition-colors duration-200
+            @click="toggleSortOrder"
+          >
+            <div :class="sortOrder === 'newest' ? 'i-carbon-arrow-down' : 'i-carbon-arrow-up'" />
+            {{ sortOrder === 'newest' ? '最新优先' : '最旧优先' }}
+          </button>
         </div>
-        <div py-2 />
 
         <TransitionGroup name="list" tag="div">
           <FavoritesItem
@@ -205,18 +209,40 @@ function onImportFile(event: Event) {
           />
         </TransitionGroup>
 
-        <div py-2 />
-        <Button @click="onImportClick">
-          导入收藏
-        </Button>
-        <div py-2 />
-        <Button @click="onExportAll">
-          导出所有收藏
-        </Button>
-        <div py-2 />
-        <Button variant="danger" @click="onDeleteAll">
-          删除所有收藏
-        </Button>
+        <!-- 底部操作 -->
+        <div
+          mt-2 rounded-xl border="~ base" bg="white dark:black" px-4 py-3
+          flex="~ items-center gap-3 wrap"
+        >
+          <button
+            flex="~ items-center gap-2" px-4 py-2 rounded-lg text-sm font-medium
+            border="~ base" cursor-pointer transition-colors duration-200
+            hover:bg-gray-100 dark:hover:bg-gray-900
+            @click="onImportClick"
+          >
+            <div i-carbon-upload />
+            导入收藏
+          </button>
+          <button
+            flex="~ items-center gap-2" px-4 py-2 rounded-lg text-sm font-medium
+            border="~ base" cursor-pointer transition-colors duration-200
+            hover:bg-gray-100 dark:hover:bg-gray-900
+            @click="onExportAll"
+          >
+            <div i-carbon-download />
+            导出所有
+          </button>
+          <button
+            flex="~ items-center gap-2" px-4 py-2 rounded-lg text-sm font-medium
+            border="~ base" cursor-pointer transition-colors duration-200
+            class="hover:bg-red-50 hover:border-red-300 hover:text-red-600 dark:hover:bg-red-950 dark:hover:border-red-800"
+            @click="onDeleteAll"
+          >
+            <div i-carbon-trash-can />
+            删除所有
+          </button>
+        </div>
+
         <input
           ref="fileInputRef"
           type="file"
@@ -229,20 +255,24 @@ function onImportFile(event: Event) {
       <!-- empty -->
       <template v-else>
         <div
-          p-4 mb-4
-          border="~ base rounded-md"
-          bg="light/80 dark:dark/80"
+          rounded-xl border="~ base" bg="white dark:black"
           flex flex-col items-center justify-center
-          min-h-60
+          min-h-60 mb-4
         >
-          <div class="i-carbon-bookmark text-4xl mb-4 text-gray-500" />
-          <div text-lg font-bold text-gray-500>
+          <div class="i-carbon-bookmark text-4xl mb-3 op-30" />
+          <div text-base font-medium op-40 mb-4>
             暂无收藏
           </div>
+          <button
+            flex="~ items-center gap-2" px-4 py-2 rounded-lg text-sm font-medium
+            border="~ base" cursor-pointer transition-colors duration-200
+            hover:bg-gray-100 dark:hover:bg-gray-900
+            @click="onImportClick"
+          >
+            <div i-carbon-upload />
+            导入收藏
+          </button>
         </div>
-        <Button @click="onImportClick">
-          导入收藏
-        </Button>
         <input
           ref="fileInputRef"
           type="file"

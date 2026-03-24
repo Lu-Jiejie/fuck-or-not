@@ -14,30 +14,14 @@ export const grokApiUrl = useStorage('grok-api-url', '')
 export const chatgptApiKey = useStorage('chatgpt-api-key', '')
 export const chatgptApiUrl = useStorage('chatgpt-api-url', '')
 
-function normalizeGrokApiUrl(url: string): string {
-  if (!url) {
-    return 'https://api.x.ai/v1/chat/completions'
-  }
+function normalizeApiUrl(url: string, defaultUrl: string): string {
+  if (!url)
+    return defaultUrl
 
   url = url.replace(/\/$/, '')
 
-  if (!url.endsWith('/v1/chat/completions')) {
+  if (!url.endsWith('/v1/chat/completions'))
     url += '/v1/chat/completions'
-  }
-
-  return url
-}
-
-function normalizeChatGPTApiUrl(url: string): string {
-  if (!url) {
-    return 'https://api.openai.com/v1/chat/completions'
-  }
-
-  url = url.replace(/\/$/, '')
-
-  if (!url.endsWith('/v1/chat/completions')) {
-    url += '/v1/chat/completions'
-  }
 
   return url
 }
@@ -172,7 +156,7 @@ export async function generateContent(model: string, contents: ContentListUnion,
       throw new Error('Grok API key not set')
     }
 
-    const apiUrl = normalizeGrokApiUrl(grokApiUrl.value)
+    const apiUrl = normalizeApiUrl(grokApiUrl.value, 'https://api.x.ai/v1/chat/completions')
     const messages: any[] = []
 
     if (systemInstruction) {
@@ -275,7 +259,7 @@ export async function generateContent(model: string, contents: ContentListUnion,
       throw new Error('ChatGPT API key not set')
     }
 
-    const apiUrl = normalizeChatGPTApiUrl(chatgptApiUrl.value)
+    const apiUrl = normalizeApiUrl(chatgptApiUrl.value, 'https://api.openai.com/v1/chat/completions')
     const messages: any[] = []
 
     if (systemInstruction) {
