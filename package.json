@@ -28,6 +28,7 @@
     "@antfu/eslint-config": "^6.7.3",
     "@iconify-json/carbon": "^1.2.15",
     "@iconify-json/stash": "^1.2.4",
+    "@netlify/functions": "^5.1.5",
     "@types/markdown-it": "^14.1.2",
     "@types/node": "^25.0.3",
     "@unocss/eslint-plugin": "^66.5.11",

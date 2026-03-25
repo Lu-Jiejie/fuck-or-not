@@ -5,6 +5,7 @@ import { nextTick, ref } from 'vue'
 import Input from '~/components/Input.vue'
 import Select from '~/components/Select.vue'
 import Textarea from '~/components/Textarea.vue'
+import { webdavDownload, webdavPassword, webdavStatus, webdavSyncing, webdavUpload, webdavUrl, webdavUsername } from '~/composables/useWebDAV'
 import { addModel, chatgptApiKey, chatgptApiUrl, geminiApiUrl, grokApiKey, grokApiUrl, modelOptions, removeModel, resetModelOptions, updateModel } from '~/logic'
 import { defaultConcisePrompt, defaultDetailedPrompt, defaultNovelPrompt } from '~/logic/prompts'
 
@@ -531,6 +532,62 @@ function handleRemoveModel(index: number) {
         自定义模式 Prompt
       </span>
       <Textarea v-model="customPrompts" placeholder="也许你需要第四个 prompt ，留空将不启用......" />
+    </div>
+  </div>
+
+  <!-- WebDAV 同步 -->
+  <div mb-4 rounded-xl border="~ base" bg="white dark:black" p-6 text-left>
+    <div flex="~ items-center gap-2" mb-5>
+      <div w-1 h-6 rounded-full class="bg-blue-500" />
+      <h2 text-lg font-semibold>
+        WebDAV 同步
+      </h2>
+    </div>
+
+    <div mb-4>
+      <span label ml-0.5>
+        WebDAV 地址
+        <span ml-1 text-xs op-50>(如 https://dav.example.com/dav/)</span>
+      </span>
+      <Input v-model="webdavUrl" type="text" placeholder="https://dav.example.com/dav/" />
+    </div>
+
+    <div mb-4>
+      <span label ml-0.5>用户名</span>
+      <Input v-model="webdavUsername" type="text" placeholder="（可选）" />
+    </div>
+
+    <div mb-4>
+      <span label ml-0.5>密码</span>
+      <Input v-model="webdavPassword" type="password" placeholder="（可选）" />
+    </div>
+
+    <div flex="~ gap-3 wrap items-center">
+      <button
+        flex="~ items-center gap-2" px-4 py-2 rounded-lg text-sm font-medium
+        border="~ base" cursor-pointer transition-colors duration-200
+        hover:bg-gray-100 dark:hover:bg-gray-900
+        :disabled="webdavSyncing"
+        :class="{ 'op-50 cursor-not-allowed': webdavSyncing }"
+        @click="webdavUpload"
+      >
+        <div :class="webdavSyncing ? 'i-carbon-circle-dash animate-spin' : 'i-carbon-cloud-upload'" />
+        上传到 WebDAV
+      </button>
+      <button
+        flex="~ items-center gap-2" px-4 py-2 rounded-lg text-sm font-medium
+        border="~ base" cursor-pointer transition-colors duration-200
+        hover:bg-gray-100 dark:hover:bg-gray-900
+        :disabled="webdavSyncing"
+        :class="{ 'op-50 cursor-not-allowed': webdavSyncing }"
+        @click="webdavDownload"
+      >
+        <div :class="webdavSyncing ? 'i-carbon-circle-dash animate-spin' : 'i-carbon-cloud-download'" />
+        从 WebDAV 下载
+      </button>
+      <span v-if="webdavStatus" text-sm :class="webdavStatus.includes('失败') ? 'text-red-500' : 'text-green-500'">
+        {{ webdavStatus }}
+      </span>
     </div>
   </div>
 

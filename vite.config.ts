@@ -27,8 +27,9 @@ export default defineConfig({
 
   ],
 
-  // https://github.com/vitest-dev/vitest
-  test: {
-    environment: 'jsdom',
-  },
+  // server: {
+  //   proxy: {
+  //     '/api': 'http://localhost:8888',
+  //   },
+  // },
 })
