@@ -20,13 +20,16 @@ importers:
         version: 14.1.0(vue@3.5.26(typescript@5.9.3))
       '@vueuse/integrations':
         specifier: ^14.1.0
-        version: 14.1.0(change-case@5.4.4)(idb-keyval@6.2.2)(vue@3.5.26(typescript@5.9.3))
+        version: 14.1.0(change-case@5.4.4)(idb-keyval@6.2.2)(sortablejs@1.15.7)(vue@3.5.26(typescript@5.9.3))
       idb-keyval:
         specifier: ^6.2.2
         version: 6.2.2
       markdown-it:
         specifier: ^14.1.0
         version: 14.1.0
+      sortablejs:
+        specifier: ^1.15.7
+        version: 1.15.7
       vue:
         specifier: ^3.5.26
         version: 3.5.26(typescript@5.9.3)
@@ -52,6 +55,9 @@ importers:
       '@types/node':
         specifier: ^25.0.3
         version: 25.0.3
+      '@types/sortablejs':
+        specifier: ^1.15.9
+        version: 1.15.9
       '@unocss/eslint-plugin':
         specifier: ^66.5.11
         version: 66.5.11(eslint@9.39.2(jiti@2.6.1))(typescript@5.9.3)
@@ -895,6 +901,9 @@ packages:
 
   '@types/node@25.0.3':
     resolution: {integrity: sha512-W609buLVRVmeW693xKfzHeIV6nJGGz98uCPfeXI1ELMLXVeKYZ9m15fAMSaUPBHYLGFsVRcMmSCksQOrZV9BYA==}
+
+  '@types/sortablejs@1.15.9':
+    resolution: {integrity: sha512-7HP+rZGE2p886PKV9c9OJzLBI6BBJu1O7lJGYnPyG3fS4/duUCcngkNCjsLwIMV+WMqANe3tt4irrXHSIe68OQ==}
 
   '@types/unist@3.0.3':
     resolution: {integrity: sha512-ko/gIFJRv177XgZsZcBwnqJN5x/Gien8qNOn0D5bQU/zAzVf9Zt3BlcUiLqhV9y4ARk0GbT3tnUiPNgnTXzc/Q==}
@@ -2720,6 +2729,9 @@ packages:
     resolution: {integrity: sha512-bSiSngZ/jWeX93BqeIAbImyTbEihizcwNjFoRUIY/T1wWQsfsm2Vw1agPKylXvQTU7iASGdHhyqRlqQzfz+Htg==}
     engines: {node: '>=18'}
 
+  sortablejs@1.15.7:
+    resolution: {integrity: sha512-Kk8wLQPlS+yi1ZEf48a4+fzHa4yxjC30M/Sr2AnQu+f/MPwvvX9XjZ6OWejiz8crBsLwSq8GHqaxaET7u6ux0A==}
+
   source-map-js@1.2.1:
     resolution: {integrity: sha512-UXWMKhLOwVKb728IUtQPXxfYU+usdybtUrK/8uGE8CQMvrhOpwvzDBwj0QhSL7MQc7vIsISBG8VQ8+IDQxpfQA==}
     engines: {node: '>=0.10.0'}
@@ -3780,6 +3792,8 @@ snapshots:
     dependencies:
       undici-types: 7.16.0
 
+  '@types/sortablejs@1.15.9': {}
+
   '@types/unist@3.0.3': {}
 
   '@types/web-bluetooth@0.0.21': {}
@@ -4258,7 +4272,7 @@ snapshots:
       '@vueuse/shared': 14.1.0(vue@3.5.26(typescript@5.9.3))
       vue: 3.5.26(typescript@5.9.3)
 
-  '@vueuse/integrations@14.1.0(change-case@5.4.4)(idb-keyval@6.2.2)(vue@3.5.26(typescript@5.9.3))':
+  '@vueuse/integrations@14.1.0(change-case@5.4.4)(idb-keyval@6.2.2)(sortablejs@1.15.7)(vue@3.5.26(typescript@5.9.3))':
     dependencies:
       '@vueuse/core': 14.1.0(vue@3.5.26(typescript@5.9.3))
       '@vueuse/shared': 14.1.0(vue@3.5.26(typescript@5.9.3))
@@ -4266,6 +4280,7 @@ snapshots:
     optionalDependencies:
       change-case: 5.4.4
       idb-keyval: 6.2.2
+      sortablejs: 1.15.7
 
   '@vueuse/metadata@14.1.0': {}
 
@@ -6007,6 +6022,8 @@ snapshots:
     dependencies:
       ansi-styles: 6.2.1
       is-fullwidth-code-point: 5.0.0
+
+  sortablejs@1.15.7: {}
 
   source-map-js@1.2.1: {}
 

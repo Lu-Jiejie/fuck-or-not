@@ -2,6 +2,7 @@
 import type { FavoriteResult } from '~/types'
 import { computed, ref } from 'vue'
 import MarkdownRenderer from '~/components/MarkdownRenderer.vue'
+import { getImageByHash } from '~/logic'
 
 const props = defineProps<{
   item: FavoriteResult
@@ -22,6 +23,14 @@ const modeMap = {
   novel: '小说模式',
   custom: '自定义模式',
 }
+
+const imageData = computed(() => getImageByHash(props.item.imageHash))
+const imageSrc = computed(() => {
+  const { base64, mimeType } = imageData.value
+  if (!base64)
+    return ''
+  return `data:${mimeType};base64,${base64}`
+})
 
 function formatTime(ts: number) {
   const d = new Date(ts)
@@ -65,7 +74,7 @@ function formatTime(ts: number) {
       flex items-center justify-center
     >
       <img
-        :src="`data:image/png;base64,${props.item.image}`"
+        :src="imageSrc"
         :alt="`Favorite item image at ${formatTime(props.item.time)}`"
         class="preview"
         rounded max-h-100 max-w-full object-contain

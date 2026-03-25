@@ -2,6 +2,7 @@ import type { ContentListUnion } from '@google/genai'
 import type { AIProvider, ModelOption } from '~/types'
 import { GoogleGenAI, HarmBlockThreshold, HarmCategory } from '@google/genai'
 import { useDark, useStorage, useToggle } from '@vueuse/core'
+import { useIDBKeyval } from '@vueuse/integrations/useIDBKeyval'
 import { ref, watch } from 'vue'
 
 export const isDark = useDark()
@@ -381,4 +382,40 @@ export function fileToBase64(file: File): Promise<string> {
     reader.onerror = () => reject(reader.error)
     reader.readAsDataURL(file)
   })
+}
+
+export async function computeImageHash(base64: string): Promise<string> {
+  const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0))
+  const hashBuffer = await crypto.subtle.digest('SHA-256', bytes)
+  const hashArray = Array.from(new Uint8Array(hashBuffer))
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 16)
+}
+
+export const imageStore = useIDBKeyval<Record<string, string>>('favorite-images', {})
+
+export async function saveImage(base64: string, mimeType: string): Promise<string> {
+  const hash = await computeImageHash(base64)
+  if (!imageStore.data.value[hash]) {
+    imageStore.data.value = { ...imageStore.data.value, [hash]: base64 }
+  }
+  // store mimeType alongside — key: hash, mimeType key: hash+':mime'
+  if (!imageStore.data.value[`${hash}:mime`]) {
+    imageStore.data.value = { ...imageStore.data.value, [`${hash}:mime`]: mimeType }
+  }
+  return hash
+}
+
+export function getImageByHash(hash: string): { base64: string, mimeType: string } {
+  const base64 = imageStore.data.value[hash] ?? ''
+  const mimeType = imageStore.data.value[`${hash}:mime`] ?? 'image/png'
+  return { base64, mimeType }
+}
+
+export function deleteImageIfUnused(hash: string, usedHashes: Set<string>) {
+  if (!usedHashes.has(hash)) {
+    const next = { ...imageStore.data.value }
+    delete next[hash]
+    delete next[`${hash}:mime`]
+    imageStore.data.value = next
+  }
 }

@@ -1,10 +1,15 @@
 <script setup lang="ts">
 import type { Fn } from '@vueuse/core'
 import { useEventListener } from '@vueuse/core'
-import { onBeforeUnmount, ref, watch } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterView } from 'vue-router'
 import Header from './components/Header.vue'
 import ScrollJump from './components/ScrollJump.vue'
+import { migrateIfNeeded } from './composables/useMigration'
+
+onMounted(() => {
+  migrateIfNeeded()
+})
 
 const imageModel = ref<HTMLImageElement>()
 

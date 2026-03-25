@@ -6,7 +6,7 @@ import {
 import { useStorage } from '@vueuse/core'
 import { useIDBKeyval } from '@vueuse/integrations/useIDBKeyval'
 import { computed, ref } from 'vue'
-import { chatgptApiKey, fileToBase64, generateContent, googleApiKey, grokApiKey, modelOptions, uploadFileToAPI } from '~/logic'
+import { chatgptApiKey, fileToBase64, generateContent, googleApiKey, grokApiKey, modelOptions, saveImage, uploadFileToAPI } from '~/logic'
 import { defaultConcisePrompt, defaultDetailedPrompt, defaultNovelPrompt } from '~/logic/prompts'
 
 export function useAnalyse() {
@@ -170,10 +170,12 @@ export function useAnalyse() {
         lastFavoriteResult.value = {
           model: selectedModel.value.id,
           mode: selectedMode.value,
-          image: lastImage,
+          imageHash: '',
+          mimeType: image.value!.type,
           time: Date.now(),
           result: response.text!,
-        }
+          _pendingBase64: lastImage,
+        } as any
       }
     }
     catch (error) {
@@ -185,9 +187,21 @@ export function useAnalyse() {
     }
   }
 
-  function handleSaveButtonClick() {
+  async function handleSaveButtonClick() {
     saveButtonDisabled.value = true
-    favoriteResults.data.value.unshift(lastFavoriteResult.value!)
+    const pending = lastFavoriteResult.value as any
+    const base64 = pending._pendingBase64 as string
+    const mimeType = pending.mimeType as string
+    const hash = await saveImage(base64, mimeType)
+    const item: FavoriteResult = {
+      model: pending.model,
+      mode: pending.mode,
+      imageHash: hash,
+      mimeType,
+      time: pending.time,
+      result: pending.result,
+    }
+    favoriteResults.data.value.unshift(item)
   }
 
   return {

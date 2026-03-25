@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import type { FavoriteResult } from '~/types'
+import type { FavoriteResult, LegacyFavoriteResult } from '~/types'
 import { useMediaQuery, useStorage } from '@vueuse/core'
 import { useIDBKeyval } from '@vueuse/integrations/useIDBKeyval'
 import { computed, nextTick, ref } from 'vue'
 import FavoritesItem from '~/components/FavoritesItem.vue'
 import Pagination from '~/components/Pagination.vue'
+import { computeImageHash, deleteImageIfUnused, imageStore } from '~/logic'
 
 const isMobile = useMediaQuery('(max-width: 768px)')
 
@@ -44,7 +45,10 @@ function onDelete(time: number) {
   }
   const idx = favoriteResults.data.value?.findIndex(item => item.time === time) ?? -1
   if (idx !== -1) {
+    const hash = favoriteResults.data.value![idx].imageHash
     favoriteResults.data.value?.splice(idx, 1)
+    const usedHashes = new Set(favoriteResults.data.value?.map(i => i.imageHash) ?? [])
+    deleteImageIfUnused(hash, usedHashes)
   }
   nextTick(() => {
     const total = favoriteResults.data.value?.length ?? 0
@@ -72,6 +76,7 @@ function onDeleteAll() {
     return
   }
   favoriteResults.data.value = []
+  imageStore.data.value = {}
   page.value = 1
 }
 
@@ -82,7 +87,11 @@ function onExportAll() {
   if (!confirm('确定要导出所有收藏吗？')) {
     return
   }
-  const data = JSON.stringify(favoriteResults.data.value, null, 2)
+  const exportData = {
+    favorites: favoriteResults.data.value,
+    images: imageStore.data.value,
+  }
+  const data = JSON.stringify(exportData, null, 2)
   const blob = new Blob([data], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -108,22 +117,45 @@ function onImportFile(event: Event) {
     return
 
   const reader = new FileReader()
-  reader.onload = () => {
+  reader.onload = async () => {
     try {
-      const data = JSON.parse(reader.result as string) as FavoriteResult[]
-      if (!Array.isArray(data)) {
+      const parsed = JSON.parse(reader.result as string)
+      // 新格式：{ favorites, images }；旧格式：直接是数组
+      const raw: (FavoriteResult | LegacyFavoriteResult)[] = Array.isArray(parsed)
+        ? parsed
+        : Array.isArray(parsed.favorites) ? parsed.favorites : null
+      if (!raw) {
         alert('导入失败：文件格式不正确')
         return
       }
+      // 合并图片数据
+      if (parsed.images && typeof parsed.images === 'object') {
+        imageStore.data.value = { ...imageStore.data.value, ...parsed.images }
+      }
       const existingTimes = new Set(favoriteResults.data.value?.map(item => item.time) ?? [])
-      const newItems = data.filter(item => !existingTimes.has(item.time))
-      if (newItems.length === 0) {
+      const incoming = raw.filter(item => !existingTimes.has(item.time))
+      if (incoming.length === 0) {
         alert('没有新的收藏可导入')
         return
       }
-      favoriteResults.data.value = [...(favoriteResults.data.value ?? []), ...newItems]
+      // 迁移旧格式
+      const migrated: FavoriteResult[] = []
+      const newImages: Record<string, string> = { ...imageStore.data.value }
+      for (const item of incoming) {
+        if ('image' in item) {
+          const hash = await computeImageHash(item.image)
+          newImages[hash] = item.image
+          newImages[`${hash}:mime`] = 'image/png'
+          migrated.push({ model: item.model, mode: item.mode, imageHash: hash, mimeType: 'image/png', time: item.time, result: item.result })
+        }
+        else {
+          migrated.push(item)
+        }
+      }
+      imageStore.data.value = newImages
+      favoriteResults.data.value = [...(favoriteResults.data.value ?? []), ...migrated]
         .sort((a, b) => b.time - a.time)
-      alert(`成功导入 ${newItems.length} 条收藏`)
+      alert(`成功导入 ${migrated.length} 条收藏`)
     }
     catch {
       alert('导入失败：文件解析错误')

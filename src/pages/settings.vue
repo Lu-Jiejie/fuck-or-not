@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import type { AIProvider, ModelOption } from '~/types'
 import { useStorage } from '@vueuse/core'
-import { nextTick, ref } from 'vue'
+import Sortable from 'sortablejs'
+import { nextTick, onMounted, ref } from 'vue'
 import Input from '~/components/Input.vue'
 import Select from '~/components/Select.vue'
 import Textarea from '~/components/Textarea.vue'
-import { webdavDownload, webdavPassword, webdavStatus, webdavSyncing, webdavUpload, webdavUrl, webdavUsername } from '~/composables/useWebDAV'
+import { webdavAction, webdavDownload, webdavPassword, webdavProgress, webdavStatus, webdavSyncing, webdavUpload, webdavUrl, webdavUsername } from '~/composables/useWebDAV'
 import { addModel, chatgptApiKey, chatgptApiUrl, geminiApiUrl, grokApiKey, grokApiUrl, modelOptions, removeModel, resetModelOptions, updateModel } from '~/logic'
+
 import { defaultConcisePrompt, defaultDetailedPrompt, defaultNovelPrompt } from '~/logic/prompts'
 
 const googleApiKey = useStorage('google-api-key', '')
@@ -64,6 +66,7 @@ const providerOptions = [
 ]
 
 function startEditing(index: number, model: ModelOption) {
+  cancelAdding()
   editingIndex.value = index
   editingModelId.value = model.id
   editingProvider.value = model.provider
@@ -92,6 +95,26 @@ function handleResetModels() {
     resetModelOptions()
   }
 }
+
+const modelListRef = ref<HTMLElement | null>(null)
+
+onMounted(() => {
+  if (!modelListRef.value)
+    return
+  Sortable.create(modelListRef.value, {
+    animation: 150,
+    handle: '.drag-handle',
+    ghostClass: 'sortable-ghost',
+    onEnd({ oldIndex, newIndex }) {
+      if (oldIndex === undefined || newIndex === undefined || oldIndex === newIndex)
+        return
+      const list = [...modelOptions.value]
+      const [item] = list.splice(oldIndex, 1)
+      list.splice(newIndex, 0, item)
+      modelOptions.value = list
+    },
+  })
+})
 
 const settingsFileInputRef = ref<HTMLInputElement | null>(null)
 
@@ -176,6 +199,7 @@ function onImportSettingsFile(event: Event) {
 }
 
 function startAdding() {
+  cancelEditing()
   isAdding.value = true
   newModelId.value = ''
   newModelProvider.value = 'Gemini'
@@ -334,10 +358,10 @@ function handleRemoveModel(index: number) {
       </button>
     </div>
 
-    <div rounded-lg border="~ base" overflow-hidden>
+    <div ref="modelListRef" rounded-lg border="~ base" overflow-hidden>
       <div
         v-for="(model, index) in modelOptions"
-        :key="index"
+        :key="model.id"
         px-4 py-2.5 flex="~ items-center gap-2"
         border="b base"
         class="last:border-b-0"
@@ -382,6 +406,7 @@ function handleRemoveModel(index: number) {
           </div>
         </template>
         <template v-else>
+          <div class="drag-handle" i-carbon-draggable op-30 hover:op-70 cursor-grab active:cursor-grabbing flex-shrink-0 p-2 ml--2 />
           <div flex-1 min-w-0 flex="~ items-center gap-2">
             <span font-mono text-sm truncate flex-1 class="leading-8">{{ model.id }}</span>
             <span
@@ -473,6 +498,77 @@ function handleRemoveModel(index: number) {
     </div>
   </div>
 
+  <!-- WebDAV 同步 -->
+  <div mb-4 rounded-xl border="~ base" bg="white dark:black" p-6 text-left>
+    <div flex="~ items-center gap-2" mb-5>
+      <div w-1 h-6 rounded-full class="bg-teal-500" />
+      <h2 text-lg font-semibold>
+        WebDAV 同步
+      </h2>
+    </div>
+
+    <div mb-4>
+      <span label ml-0.5>
+        WebDAV 地址
+        <span ml-1 text-xs op-50>(请使用支持 CORS 的 WebDAV 服务器)</span>
+      </span>
+      <Input v-model="webdavUrl" type="text" placeholder="https://dav.example.com/dav/" />
+    </div>
+
+    <div mb-4>
+      <span label ml-0.5>用户名</span>
+      <Input v-model="webdavUsername" type="text" placeholder="（可选）" />
+    </div>
+
+    <div mb-4>
+      <span label ml-0.5>密码</span>
+      <Input v-model="webdavPassword" type="password" placeholder="（可选）" />
+    </div>
+
+    <div flex="~ gap-3 wrap items-center">
+      <button
+        flex="~ items-center gap-2" px-4 py-2 rounded-lg text-sm font-medium
+        border="~ base" cursor-pointer transition-colors duration-200
+        hover:bg-gray-100 dark:hover:bg-gray-900
+        :disabled="webdavSyncing"
+        :class="{ 'op-50 cursor-not-allowed': webdavSyncing }"
+        @click="webdavUpload"
+      >
+        <div :class="webdavAction === 'upload' ? 'i-carbon-circle-dash animate-spin' : 'i-carbon-cloud-upload'" />
+        上传到 WebDAV
+      </button>
+      <button
+        flex="~ items-center gap-2" px-4 py-2 rounded-lg text-sm font-medium
+        border="~ base" cursor-pointer transition-colors duration-200
+        hover:bg-gray-100 dark:hover:bg-gray-900
+        :disabled="webdavSyncing"
+        :class="{ 'op-50 cursor-not-allowed': webdavSyncing }"
+        @click="webdavDownload"
+      >
+        <div :class="webdavAction === 'download' ? 'i-carbon-circle-dash animate-spin' : 'i-carbon-cloud-download'" />
+        从 WebDAV 下载
+      </button>
+    </div>
+
+    <!-- 进度条 -->
+    <div v-if="webdavSyncing && webdavProgress.step" mt-4>
+      <div flex="~ items-center justify-between" mb-1.5 text-sm op-70>
+        <span>{{ webdavProgress.step }}</span>
+        <span v-if="webdavProgress.total > 0">{{ webdavProgress.current }} / {{ webdavProgress.total }}</span>
+      </div>
+      <div w-full h-1.5 rounded-full bg-gray-200 dark:bg-gray-800 overflow-hidden>
+        <div
+          h-full rounded-full bg-teal-500 transition-all duration-300
+          :style="{ width: webdavProgress.total > 0 ? `${Math.round(webdavProgress.current / webdavProgress.total * 100)}%` : '100%' }"
+        />
+      </div>
+    </div>
+
+    <div v-if="webdavStatus" mt-3 text-sm :class="webdavStatus.includes('失败') ? 'text-red-400' : 'text-teal-600 dark:text-teal-400'">
+      {{ webdavStatus }}
+    </div>
+  </div>
+
   <!-- Prompt 配置 -->
   <div mb-4 rounded-xl border="~ base" bg="white dark:black" p-6 text-left>
     <div flex="~ items-center gap-2" mb-5>
@@ -535,62 +631,6 @@ function handleRemoveModel(index: number) {
     </div>
   </div>
 
-  <!-- WebDAV 同步 -->
-  <div mb-4 rounded-xl border="~ base" bg="white dark:black" p-6 text-left>
-    <div flex="~ items-center gap-2" mb-5>
-      <div w-1 h-6 rounded-full class="bg-blue-500" />
-      <h2 text-lg font-semibold>
-        WebDAV 同步
-      </h2>
-    </div>
-
-    <div mb-4>
-      <span label ml-0.5>
-        WebDAV 地址
-        <span ml-1 text-xs op-50>(如 https://dav.example.com/dav/)</span>
-      </span>
-      <Input v-model="webdavUrl" type="text" placeholder="https://dav.example.com/dav/" />
-    </div>
-
-    <div mb-4>
-      <span label ml-0.5>用户名</span>
-      <Input v-model="webdavUsername" type="text" placeholder="（可选）" />
-    </div>
-
-    <div mb-4>
-      <span label ml-0.5>密码</span>
-      <Input v-model="webdavPassword" type="password" placeholder="（可选）" />
-    </div>
-
-    <div flex="~ gap-3 wrap items-center">
-      <button
-        flex="~ items-center gap-2" px-4 py-2 rounded-lg text-sm font-medium
-        border="~ base" cursor-pointer transition-colors duration-200
-        hover:bg-gray-100 dark:hover:bg-gray-900
-        :disabled="webdavSyncing"
-        :class="{ 'op-50 cursor-not-allowed': webdavSyncing }"
-        @click="webdavUpload"
-      >
-        <div :class="webdavSyncing ? 'i-carbon-circle-dash animate-spin' : 'i-carbon-cloud-upload'" />
-        上传到 WebDAV
-      </button>
-      <button
-        flex="~ items-center gap-2" px-4 py-2 rounded-lg text-sm font-medium
-        border="~ base" cursor-pointer transition-colors duration-200
-        hover:bg-gray-100 dark:hover:bg-gray-900
-        :disabled="webdavSyncing"
-        :class="{ 'op-50 cursor-not-allowed': webdavSyncing }"
-        @click="webdavDownload"
-      >
-        <div :class="webdavSyncing ? 'i-carbon-circle-dash animate-spin' : 'i-carbon-cloud-download'" />
-        从 WebDAV 下载
-      </button>
-      <span v-if="webdavStatus" text-sm :class="webdavStatus.includes('失败') ? 'text-red-500' : 'text-green-500'">
-        {{ webdavStatus }}
-      </span>
-    </div>
-  </div>
-
   <!-- 设置管理 -->
   <div mb-4 rounded-xl border="~ base" bg="white dark:black" p-6 text-left>
     <div flex="~ items-center gap-2" mb-5>
@@ -630,3 +670,10 @@ function handleRemoveModel(index: number) {
     >
   </div>
 </template>
+
+<style scoped>
+.sortable-ghost {
+  opacity: 0.4;
+  background: var(--c-bg);
+}
+</style>
