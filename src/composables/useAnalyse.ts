@@ -155,8 +155,7 @@ export function useAnalyse() {
       console.log(response)
       if (response.text === '' || response.text === null || response.text === undefined) {
         if ((response.candidates && response.candidates[0]?.finishReason === 'PROHIBITED_CONTENT')
-          || (response as any).promptFeedback?.blockReason
-        ) {
+          || (response as any).promptFeedback?.blockReason) {
           errorMsg.value = '内容被安全过滤器阻止，请重试或更换模型。'
         }
         else {
@@ -179,8 +178,13 @@ export function useAnalyse() {
       }
     }
     catch (error) {
-      console.error(error)
-      errorMsg.value = '发生错误，请稍后再试或检查控制台日志。'
+      console.error('[Analysis Error]', {
+        provider: currentProvider,
+        model: selectedModel.value.id,
+        uploadType: uploadType.value,
+        error,
+      })
+      errorMsg.value = `Error: ${(error as Error).message || String(error)}`
     }
     finally {
       analyseButtonLoading.value = false

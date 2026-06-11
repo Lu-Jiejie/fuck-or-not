@@ -33,7 +33,12 @@ function createGeminiClient() {
   if (!googleApiKey.value)
     return null
 
-  const config: any = { apiKey: googleApiKey.value }
+  const config: any = {
+    apiKey: googleApiKey.value,
+    fetch: (url: RequestInfo | URL, init?: RequestInit) => {
+      return fetch(url, { ...init, mode: 'cors' })
+    },
+  }
 
   if (geminiApiUrl.value) {
     config.baseUrl = geminiApiUrl.value
@@ -136,20 +141,28 @@ export function resetModelOptions() {
 
 export async function generateContent(model: string, contents: ContentListUnion, systemInstruction: string, provider: AIProvider) {
   if (provider === 'Gemini') {
-    return geminiAI.value!.models.generateContent({
-      model,
-      contents,
-      config: {
-        systemInstruction,
-        safetySettings: [
-          { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-          { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
-          { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
-          { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-          { category: HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY, threshold: HarmBlockThreshold.BLOCK_NONE },
-        ],
-      },
-    })
+    const baseUrl = geminiApiUrl.value || 'https://generativelanguage.googleapis.com'
+    console.log('[Gemini Request]', { model, baseUrl })
+    try {
+      return await geminiAI.value!.models.generateContent({
+        model,
+        contents,
+        config: {
+          systemInstruction,
+          safetySettings: [
+            { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+            { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+            { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+            { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+            { category: HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY, threshold: HarmBlockThreshold.BLOCK_NONE },
+          ],
+        },
+      })
+    }
+    catch (error) {
+      console.error('[Gemini Error]', { model, baseUrl, error })
+      throw error
+    }
   }
   else if (provider === 'Grok') {
     const apiKey = grokApiKey.value
@@ -158,6 +171,7 @@ export async function generateContent(model: string, contents: ContentListUnion,
     }
 
     const apiUrl = normalizeApiUrl(grokApiUrl.value, 'https://api.x.ai/v1/chat/completions')
+    console.log('[Grok Request]', { model, apiUrl })
     const messages: any[] = []
 
     if (systemInstruction) {
@@ -226,32 +240,39 @@ export async function generateContent(model: string, contents: ContentListUnion,
       }
     }
 
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages: mergedMessages,
-        temperature: 0.7,
-      }),
-    })
+    try {
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages: mergedMessages,
+          temperature: 0.7,
+        }),
+      })
 
-    if (!response.ok) {
-      const error = await response.text()
-      throw new Error(`Grok API error: ${error}`)
+      if (!response.ok) {
+        const error = await response.text()
+        console.error('[Grok Error]', { status: response.status, statusText: response.statusText, error })
+        throw new Error(`Grok API error (${response.status}): ${error}`)
+      }
+
+      const data = await response.json()
+
+      // Convert OpenAI format response to Google AI format
+      return {
+        text: data.choices[0]?.message?.content || '',
+        candidates: [{
+          finishReason: data.choices[0]?.finish_reason === 'content_filter' ? 'PROHIBITED_CONTENT' : 'STOP',
+        }],
+      }
     }
-
-    const data = await response.json()
-
-    // Convert OpenAI format response to Google AI format
-    return {
-      text: data.choices[0]?.message?.content || '',
-      candidates: [{
-        finishReason: data.choices[0]?.finish_reason === 'content_filter' ? 'PROHIBITED_CONTENT' : 'STOP',
-      }],
+    catch (error) {
+      console.error('[Grok Error]', { model, apiUrl, error })
+      throw error
     }
   }
   else if (provider === 'ChatGPT') {
@@ -261,6 +282,7 @@ export async function generateContent(model: string, contents: ContentListUnion,
     }
 
     const apiUrl = normalizeApiUrl(chatgptApiUrl.value, 'https://api.openai.com/v1/chat/completions')
+    console.log('[ChatGPT Request]', { model, apiUrl })
     const messages: any[] = []
 
     if (systemInstruction) {
@@ -329,32 +351,39 @@ export async function generateContent(model: string, contents: ContentListUnion,
       }
     }
 
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages: mergedMessages,
-        temperature: 0.7,
-      }),
-    })
+    try {
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages: mergedMessages,
+          temperature: 0.7,
+        }),
+      })
 
-    if (!response.ok) {
-      const error = await response.text()
-      throw new Error(`ChatGPT API error: ${error}`)
+      if (!response.ok) {
+        const error = await response.text()
+        console.error('[ChatGPT Error]', { status: response.status, statusText: response.statusText, error })
+        throw new Error(`ChatGPT API error (${response.status}): ${error}`)
+      }
+
+      const data = await response.json()
+
+      // Convert OpenAI format response to Google AI format
+      return {
+        text: data.choices[0]?.message?.content || '',
+        candidates: [{
+          finishReason: data.choices[0]?.finish_reason === 'content_filter' ? 'PROHIBITED_CONTENT' : 'STOP',
+        }],
+      }
     }
-
-    const data = await response.json()
-
-    // Convert OpenAI format response to Google AI format
-    return {
-      text: data.choices[0]?.message?.content || '',
-      candidates: [{
-        finishReason: data.choices[0]?.finish_reason === 'content_filter' ? 'PROHIBITED_CONTENT' : 'STOP',
-      }],
+    catch (error) {
+      console.error('[ChatGPT Error]', { model, apiUrl, error })
+      throw error
     }
   }
 
