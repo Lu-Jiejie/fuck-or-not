@@ -51,18 +51,30 @@ watch([googleApiKey, geminiApiUrl], () => {
   geminiAI.value = createGeminiClient()
 })
 
+export const defaultGeminiModels: string[] = [
+  'gemini-2.5-flash',
+  'gemini-2.5-flash-lite',
+  'gemini-3-flash',
+]
+
+export const defaultGrokModels: string[] = [
+  'grok-4-1-fast-reasoning',
+  'grok-4-fast-reasoning',
+  'grok-4',
+  'grok-2-image-1212',
+]
+
+export const defaultChatGPTModels: string[] = [
+  'gpt-4o',
+  'gpt-4o-mini',
+  'gpt-4-turbo',
+  'gpt-4',
+]
+
 export const defaultModelOptions: ModelOption[] = [
-  { id: 'gemini-2.5-flash', provider: 'Gemini' },
-  { id: 'gemini-2.5-flash-lite', provider: 'Gemini' },
-  { id: 'gemini-3-flash', provider: 'Gemini' },
-  { id: 'grok-4-1-fast-reasoning', provider: 'Grok' },
-  { id: 'grok-4-fast-reasoning', provider: 'Grok' },
-  { id: 'grok-4', provider: 'Grok' },
-  { id: 'grok-2-image-1212', provider: 'Grok' },
-  { id: 'gpt-4o', provider: 'ChatGPT' },
-  { id: 'gpt-4o-mini', provider: 'ChatGPT' },
-  { id: 'gpt-4-turbo', provider: 'ChatGPT' },
-  { id: 'gpt-4', provider: 'ChatGPT' },
+  ...defaultGeminiModels.map(id => ({ id, provider: 'Gemini' as AIProvider })),
+  ...defaultGrokModels.map(id => ({ id, provider: 'Grok' as AIProvider })),
+  ...defaultChatGPTModels.map(id => ({ id, provider: 'ChatGPT' as AIProvider })),
 ]
 
 function migrateModelOptions(): ModelOption[] {
@@ -102,6 +114,12 @@ function migrateModelOptions(): ModelOption[] {
   return [...defaultModelOptions]
 }
 
+// 按提供商分组的模型列表
+export const geminiModels = useStorage<string[]>('gemini-models', [])
+export const grokModels = useStorage<string[]>('grok-models', [])
+export const chatgptModels = useStorage<string[]>('chatgpt-models', [])
+
+// 兼容旧版的统一模型列表（用于迁移）
 export const modelOptions = useStorage<ModelOption[]>('model-options', [])
 
 function needsMigration(data: any[]): boolean {
@@ -113,11 +131,63 @@ function needsMigration(data: any[]): boolean {
     || (typeof first === 'object' && !first.provider)
 }
 
+// 从旧版统一模型列表迁移到分组模型列表
+function migrateToProviderModels() {
+  const oldModels = modelOptions.value
+
+  // 如果旧版模型列表存在且新版为空，则进行迁移
+  if (oldModels.length > 0 && geminiModels.value.length === 0 && grokModels.value.length === 0 && chatgptModels.value.length === 0) {
+    const gemini: string[] = []
+    const grok: string[] = []
+    const chatgpt: string[] = []
+
+    for (const model of oldModels) {
+      if (model.provider === 'Gemini') {
+        gemini.push(model.id)
+      }
+      else if (model.provider === 'Grok') {
+        grok.push(model.id)
+      }
+      else if (model.provider === 'ChatGPT') {
+        chatgpt.push(model.id)
+      }
+    }
+
+    if (gemini.length > 0)
+      geminiModels.value = gemini
+    if (grok.length > 0)
+      grokModels.value = grok
+    if (chatgpt.length > 0)
+      chatgptModels.value = chatgpt
+
+    console.log('[Migration] Migrated models to provider-based storage', {
+      gemini: gemini.length,
+      grok: grok.length,
+      chatgpt: chatgpt.length,
+    })
+  }
+}
+
 function initializeModelOptions() {
   const current = modelOptions.value
 
+  // 兼容旧版数据格式
   if (current.length === 0 || needsMigration(current)) {
     modelOptions.value = migrateModelOptions()
+  }
+
+  // 先执行迁移（如果需要），这样可以从旧版 model-options 迁移数据
+  migrateToProviderModels()
+
+  // 如果迁移后分组模型列表仍为空，则初始化为默认值
+  if (geminiModels.value.length === 0) {
+    geminiModels.value = [...defaultGeminiModels]
+  }
+  if (grokModels.value.length === 0) {
+    grokModels.value = [...defaultGrokModels]
+  }
+  if (chatgptModels.value.length === 0) {
+    chatgptModels.value = [...defaultChatGPTModels]
   }
 }
 
@@ -137,6 +207,98 @@ export function updateModel(index: number, model: ModelOption) {
 
 export function resetModelOptions() {
   modelOptions.value = [...defaultModelOptions]
+}
+
+// 新的按提供商管理模型的函数
+export function addProviderModel(provider: AIProvider, modelId: string) {
+  const trimmedId = modelId.trim()
+  if (!trimmedId)
+    return
+
+  switch (provider) {
+    case 'Gemini':
+      if (!geminiModels.value.includes(trimmedId)) {
+        geminiModels.value.push(trimmedId)
+      }
+      break
+    case 'Grok':
+      if (!grokModels.value.includes(trimmedId)) {
+        grokModels.value.push(trimmedId)
+      }
+      break
+    case 'ChatGPT':
+      if (!chatgptModels.value.includes(trimmedId)) {
+        chatgptModels.value.push(trimmedId)
+      }
+      break
+  }
+}
+
+export function removeProviderModel(provider: AIProvider, index: number) {
+  switch (provider) {
+    case 'Gemini':
+      geminiModels.value.splice(index, 1)
+      break
+    case 'Grok':
+      grokModels.value.splice(index, 1)
+      break
+    case 'ChatGPT':
+      chatgptModels.value.splice(index, 1)
+      break
+  }
+}
+
+export function updateProviderModel(provider: AIProvider, index: number, newId: string) {
+  const trimmedId = newId.trim()
+  if (!trimmedId)
+    return
+
+  switch (provider) {
+    case 'Gemini':
+      geminiModels.value[index] = trimmedId
+      break
+    case 'Grok':
+      grokModels.value[index] = trimmedId
+      break
+    case 'ChatGPT':
+      chatgptModels.value[index] = trimmedId
+      break
+  }
+}
+
+export function resetProviderModels(provider?: AIProvider) {
+  if (!provider) {
+    // 重置所有
+    geminiModels.value = [...defaultGeminiModels]
+    grokModels.value = [...defaultGrokModels]
+    chatgptModels.value = [...defaultChatGPTModels]
+  }
+  else {
+    switch (provider) {
+      case 'Gemini':
+        geminiModels.value = [...defaultGeminiModels]
+        break
+      case 'Grok':
+        grokModels.value = [...defaultGrokModels]
+        break
+      case 'ChatGPT':
+        chatgptModels.value = [...defaultChatGPTModels]
+        break
+    }
+  }
+}
+
+export function getProviderModels(provider: AIProvider): string[] {
+  switch (provider) {
+    case 'Gemini':
+      return geminiModels.value
+    case 'Grok':
+      return grokModels.value
+    case 'ChatGPT':
+      return chatgptModels.value
+    default:
+      return []
+  }
 }
 
 export async function generateContent(model: string, contents: ContentListUnion, systemInstruction: string, provider: AIProvider) {

@@ -1,13 +1,12 @@
 <script setup lang="ts">
-import type { AIProvider, ModelOption } from '~/types'
+import type { AIProvider } from '~/types'
 import { useStorage } from '@vueuse/core'
 import Sortable from 'sortablejs'
 import { nextTick, onMounted, ref } from 'vue'
 import Input from '~/components/Input.vue'
-import Select from '~/components/Select.vue'
 import Textarea from '~/components/Textarea.vue'
 import { webdavAction, webdavDownload, webdavPassword, webdavProgress, webdavStatus, webdavSyncing, webdavUpload, webdavUrl, webdavUsername } from '~/composables/useWebDAV'
-import { addModel, chatgptApiKey, chatgptApiUrl, geminiApiUrl, grokApiKey, grokApiUrl, modelOptions, removeModel, resetModelOptions, updateModel } from '~/logic'
+import { addProviderModel, chatgptApiKey, chatgptApiUrl, chatgptModels, geminiApiUrl, geminiModels, grokApiKey, grokApiUrl, grokModels, removeProviderModel, resetProviderModels, updateProviderModel } from '~/logic'
 
 import { defaultConcisePrompt, defaultDetailedPrompt, defaultNovelPrompt } from '~/logic/prompts'
 
@@ -59,17 +58,11 @@ const newModelProvider = ref<AIProvider>('Gemini')
 const editingInputRef = ref<HTMLInputElement[]>([])
 const addingInputRef = ref<HTMLInputElement | null>(null)
 
-const providerOptions = [
-  { label: 'Gemini', value: 'Gemini' },
-  { label: 'Grok', value: 'Grok' },
-  { label: 'ChatGPT', value: 'ChatGPT' },
-]
-
-function startEditing(index: number, model: ModelOption) {
+function startEditingProvider(provider: AIProvider, index: number, modelId: string) {
   cancelAdding()
   editingIndex.value = index
-  editingModelId.value = model.id
-  editingProvider.value = model.provider
+  editingModelId.value = modelId
+  editingProvider.value = provider
   nextTick(() => {
     editingInputRef.value[0]?.focus()
   })
@@ -81,39 +74,78 @@ function cancelEditing() {
   editingProvider.value = 'Gemini'
 }
 
-function saveEditing(index: number) {
+function saveEditingProvider(provider: AIProvider, index: number) {
   if (!editingModelId.value.trim()) {
     alert('请填写模型 ID')
     return
   }
-  updateModel(index, { id: editingModelId.value.trim(), provider: editingProvider.value })
+  updateProviderModel(provider, index, editingModelId.value.trim())
   cancelEditing()
 }
 
-function handleResetModels() {
-  if (confirm('确定要重置为默认模型列表吗？这将丢失所有自定义修改。')) {
-    resetModelOptions()
+function handleResetModels(provider?: AIProvider) {
+  const message = provider
+    ? `确定要重置 ${provider} 的模型列表为默认吗？这将丢失该提供商的所有自定义修改。`
+    : '确定要重置所有提供商的模型列表为默认吗？这将丢失所有自定义修改。'
+
+  if (confirm(message)) {
+    resetProviderModels(provider)
   }
 }
 
-const modelListRef = ref<HTMLElement | null>(null)
+const geminiListRef = ref<HTMLElement | null>(null)
+const grokListRef = ref<HTMLElement | null>(null)
+const chatgptListRef = ref<HTMLElement | null>(null)
 
 onMounted(() => {
-  if (!modelListRef.value)
-    return
-  Sortable.create(modelListRef.value, {
-    animation: 150,
-    handle: '.drag-handle',
-    ghostClass: 'sortable-ghost',
-    onEnd({ oldIndex, newIndex }) {
-      if (oldIndex === undefined || newIndex === undefined || oldIndex === newIndex)
-        return
-      const list = [...modelOptions.value]
-      const [item] = list.splice(oldIndex, 1)
-      list.splice(newIndex, 0, item)
-      modelOptions.value = list
-    },
-  })
+  // 为每个提供商的模型列表创建可拖拽排序
+  if (geminiListRef.value) {
+    Sortable.create(geminiListRef.value, {
+      animation: 150,
+      handle: '.drag-handle',
+      ghostClass: 'sortable-ghost',
+      onEnd({ oldIndex, newIndex }) {
+        if (oldIndex === undefined || newIndex === undefined || oldIndex === newIndex)
+          return
+        const list = [...geminiModels.value]
+        const [item] = list.splice(oldIndex, 1)
+        list.splice(newIndex, 0, item)
+        geminiModels.value = list
+      },
+    })
+  }
+
+  if (grokListRef.value) {
+    Sortable.create(grokListRef.value, {
+      animation: 150,
+      handle: '.drag-handle',
+      ghostClass: 'sortable-ghost',
+      onEnd({ oldIndex, newIndex }) {
+        if (oldIndex === undefined || newIndex === undefined || oldIndex === newIndex)
+          return
+        const list = [...grokModels.value]
+        const [item] = list.splice(oldIndex, 1)
+        list.splice(newIndex, 0, item)
+        grokModels.value = list
+      },
+    })
+  }
+
+  if (chatgptListRef.value) {
+    Sortable.create(chatgptListRef.value, {
+      animation: 150,
+      handle: '.drag-handle',
+      ghostClass: 'sortable-ghost',
+      onEnd({ oldIndex, newIndex }) {
+        if (oldIndex === undefined || newIndex === undefined || oldIndex === newIndex)
+          return
+        const list = [...chatgptModels.value]
+        const [item] = list.splice(oldIndex, 1)
+        list.splice(newIndex, 0, item)
+        chatgptModels.value = list
+      },
+    })
+  }
 })
 
 const settingsFileInputRef = ref<HTMLInputElement | null>(null)
@@ -129,7 +161,9 @@ function onExportSettings() {
     grokApiUrl: grokApiUrl.value,
     chatgptApiKey: chatgptApiKey.value,
     chatgptApiUrl: chatgptApiUrl.value,
-    modelOptions: modelOptions.value,
+    geminiModels: geminiModels.value,
+    grokModels: grokModels.value,
+    chatgptModels: chatgptModels.value,
     concisePrompt: concisePrompt.value,
     detailedPrompt: detailedPrompt.value,
     novelPrompt: novelPrompt.value,
@@ -178,8 +212,41 @@ function onImportSettingsFile(event: Event) {
         chatgptApiKey.value = data.chatgptApiKey
       if (data.chatgptApiUrl !== undefined)
         chatgptApiUrl.value = data.chatgptApiUrl
-      if (Array.isArray(data.modelOptions))
-        modelOptions.value = data.modelOptions
+
+      // 兼容新格式：按提供商分组的模型列表
+      if (Array.isArray(data.geminiModels))
+        geminiModels.value = data.geminiModels
+      if (Array.isArray(data.grokModels))
+        grokModels.value = data.grokModels
+      if (Array.isArray(data.chatgptModels))
+        chatgptModels.value = data.chatgptModels
+
+      // 兼容旧格式：统一的 modelOptions
+      if (Array.isArray(data.modelOptions) && data.modelOptions.length > 0) {
+        const gemini: string[] = []
+        const grok: string[] = []
+        const chatgpt: string[] = []
+
+        for (const model of data.modelOptions) {
+          if (model.provider === 'Gemini') {
+            gemini.push(model.id)
+          }
+          else if (model.provider === 'Grok') {
+            grok.push(model.id)
+          }
+          else if (model.provider === 'ChatGPT') {
+            chatgpt.push(model.id)
+          }
+        }
+
+        if (gemini.length > 0)
+          geminiModels.value = gemini
+        if (grok.length > 0)
+          grokModels.value = grok
+        if (chatgpt.length > 0)
+          chatgptModels.value = chatgpt
+      }
+
       if (data.concisePrompt !== undefined)
         concisePrompt.value = data.concisePrompt
       if (data.detailedPrompt !== undefined)
@@ -198,11 +265,11 @@ function onImportSettingsFile(event: Event) {
   input.value = ''
 }
 
-function startAdding() {
+function startAdding(provider: AIProvider) {
   cancelEditing()
   isAdding.value = true
   newModelId.value = ''
-  newModelProvider.value = 'Gemini'
+  newModelProvider.value = provider
   nextTick(() => {
     addingInputRef.value?.focus()
   })
@@ -218,13 +285,13 @@ function saveAdding() {
     alert('请填写模型 ID')
     return
   }
-  addModel({ id: newModelId.value.trim(), provider: newModelProvider.value })
+  addProviderModel(newModelProvider.value, newModelId.value.trim())
   cancelAdding()
 }
 
-function handleRemoveModel(index: number) {
+function handleRemoveModel(provider: AIProvider, index: number) {
   if (confirm('确定要删除该模型吗？')) {
-    removeModel(index)
+    removeProviderModel(provider, index)
   }
 }
 </script>
@@ -260,7 +327,7 @@ function handleRemoveModel(index: number) {
       <Input v-model="googleApiKey" type="password" />
     </div>
 
-    <div>
+    <div mb-4>
       <span label ml-0.5>
         API 地址
         <span ml-1 text-xs op-50>(留空使用默认地址)</span>
@@ -270,6 +337,134 @@ function handleRemoveModel(index: number) {
         type="text"
         placeholder="https://generativelanguage.googleapis.com"
       />
+    </div>
+
+    <div>
+      <div flex="~ items-center justify-between" mb-3>
+        <span label ml-0.5>模型列表</span>
+        <button
+          text-sm op-60 hover:op-100 underline cursor-pointer transition-opacity
+          @click="handleResetModels('Gemini')"
+        >
+          重置为默认
+        </button>
+      </div>
+      <div ref="geminiListRef" rounded-lg border="~ base" overflow-hidden>
+        <div
+          v-for="(modelId, index) in geminiModels"
+          :key="modelId"
+          px-4 py-2.5 flex="~ items-center gap-2"
+          border="b base"
+          class="last:border-b-0"
+        >
+          <template v-if="editingIndex === index && editingProvider === 'Gemini'">
+            <input
+              ref="editingInputRef"
+              v-model="editingModelId"
+              type="text"
+              placeholder="模型 ID"
+              font-mono text-sm w-full
+              p="x-2 y-1"
+              bg="transparent"
+              border="~ rounded base focus:teal-600"
+              outline="none"
+              class="h-8"
+            >
+            <div flex="~ gap-1 items-center">
+              <button
+                p-2 rounded cursor-pointer text-white transition-colors duration-200
+                class="bg-teal-600 hover:bg-teal-700 h-8 w-8"
+                flex items-center justify-center
+                title="保存"
+                @click="saveEditingProvider('Gemini', index)"
+              >
+                <div i-carbon-checkmark />
+              </button>
+              <button
+                p-2 rounded cursor-pointer text-white transition-colors duration-200
+                class="bg-gray-500 hover:bg-gray-600 h-8 w-8"
+                flex items-center justify-center
+                title="取消"
+                @click="cancelEditing"
+              >
+                <div i-carbon-close />
+              </button>
+            </div>
+          </template>
+          <template v-else>
+            <div class="drag-handle" i-carbon-draggable op-30 hover:op-70 cursor-grab active:cursor-grabbing flex-shrink-0 p-2 ml--2 />
+            <span font-mono text-sm truncate flex-1 class="leading-8">{{ modelId }}</span>
+            <div flex="~ gap-1 items-center">
+              <button
+                p-2 rounded cursor-pointer text-white transition-colors duration-200
+                class="bg-teal-600 hover:bg-teal-700 h-8 w-8"
+                flex items-center justify-center
+                title="编辑"
+                @click="startEditingProvider('Gemini', index, modelId)"
+              >
+                <div i-carbon-edit />
+              </button>
+              <button
+                p-2 rounded cursor-pointer text-white transition-colors duration-200
+                class="bg-red-400 hover:bg-red-500 h-8 w-8"
+                flex items-center justify-center
+                title="删除"
+                @click="handleRemoveModel('Gemini', index)"
+              >
+                <div i-carbon-trash-can />
+              </button>
+            </div>
+          </template>
+        </div>
+
+        <!-- 添加新模型行 -->
+        <div px-4 py-2.5 flex="~ items-center gap-2">
+          <template v-if="isAdding && newModelProvider === 'Gemini'">
+            <input
+              ref="addingInputRef"
+              v-model="newModelId"
+              type="text"
+              placeholder="模型 ID（如 gemini-2.5-flash）"
+              font-mono text-sm w-full
+              p="x-2 y-1"
+              bg="transparent"
+              border="~ rounded base focus:teal-600"
+              outline="none"
+              class="h-8"
+            >
+            <div flex="~ gap-1 items-center">
+              <button
+                p-2 rounded cursor-pointer text-white transition-colors duration-200
+                class="bg-teal-600 hover:bg-teal-700 h-8 w-8"
+                flex items-center justify-center
+                title="保存"
+                @click="saveAdding"
+              >
+                <div i-carbon-checkmark />
+              </button>
+              <button
+                p-2 rounded cursor-pointer text-white transition-colors duration-200
+                class="bg-gray-500 hover:bg-gray-600 h-8 w-8"
+                flex items-center justify-center
+                title="取消"
+                @click="cancelAdding"
+              >
+                <div i-carbon-close />
+              </button>
+            </div>
+          </template>
+          <template v-else>
+            <button
+              flex="~ items-center gap-1.5" text-sm op-60 hover:op-100
+              cursor-pointer transition-opacity
+              @click="startAdding('Gemini')"
+            >
+              <div i-carbon-add />
+              添加模型
+            </button>
+          </template>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -294,7 +489,7 @@ function handleRemoveModel(index: number) {
       <Input v-model="grokApiKey" type="password" />
     </div>
 
-    <div>
+    <div mb-4>
       <span label ml-0.5>
         API 地址
         <span ml-1 text-xs op-50>(留空使用默认地址)</span>
@@ -304,6 +499,134 @@ function handleRemoveModel(index: number) {
         type="text"
         placeholder="https://api.x.ai"
       />
+    </div>
+
+    <div>
+      <div flex="~ items-center justify-between" mb-3>
+        <span label ml-0.5>模型列表</span>
+        <button
+          text-sm op-60 hover:op-100 underline cursor-pointer transition-opacity
+          @click="handleResetModels('Grok')"
+        >
+          重置为默认
+        </button>
+      </div>
+      <div ref="grokListRef" rounded-lg border="~ base" overflow-hidden>
+        <div
+          v-for="(modelId, index) in grokModels"
+          :key="modelId"
+          px-4 py-2.5 flex="~ items-center gap-2"
+          border="b base"
+          class="last:border-b-0"
+        >
+          <template v-if="editingIndex === index && editingProvider === 'Grok'">
+            <input
+              ref="editingInputRef"
+              v-model="editingModelId"
+              type="text"
+              placeholder="模型 ID"
+              font-mono text-sm w-full
+              p="x-2 y-1"
+              bg="transparent"
+              border="~ rounded base focus:purple-600"
+              outline="none"
+              class="h-8"
+            >
+            <div flex="~ gap-1 items-center">
+              <button
+                p-2 rounded cursor-pointer text-white transition-colors duration-200
+                class="bg-purple-600 hover:bg-purple-700 h-8 w-8"
+                flex items-center justify-center
+                title="保存"
+                @click="saveEditingProvider('Grok', index)"
+              >
+                <div i-carbon-checkmark />
+              </button>
+              <button
+                p-2 rounded cursor-pointer text-white transition-colors duration-200
+                class="bg-gray-500 hover:bg-gray-600 h-8 w-8"
+                flex items-center justify-center
+                title="取消"
+                @click="cancelEditing"
+              >
+                <div i-carbon-close />
+              </button>
+            </div>
+          </template>
+          <template v-else>
+            <div class="drag-handle" i-carbon-draggable op-30 hover:op-70 cursor-grab active:cursor-grabbing flex-shrink-0 p-2 ml--2 />
+            <span font-mono text-sm truncate flex-1 class="leading-8">{{ modelId }}</span>
+            <div flex="~ gap-1 items-center">
+              <button
+                p-2 rounded cursor-pointer text-white transition-colors duration-200
+                class="bg-purple-600 hover:bg-purple-700 h-8 w-8"
+                flex items-center justify-center
+                title="编辑"
+                @click="startEditingProvider('Grok', index, modelId)"
+              >
+                <div i-carbon-edit />
+              </button>
+              <button
+                p-2 rounded cursor-pointer text-white transition-colors duration-200
+                class="bg-red-400 hover:bg-red-500 h-8 w-8"
+                flex items-center justify-center
+                title="删除"
+                @click="handleRemoveModel('Grok', index)"
+              >
+                <div i-carbon-trash-can />
+              </button>
+            </div>
+          </template>
+        </div>
+
+        <!-- 添加新模型行 -->
+        <div px-4 py-2.5 flex="~ items-center gap-2">
+          <template v-if="isAdding && newModelProvider === 'Grok'">
+            <input
+              ref="addingInputRef"
+              v-model="newModelId"
+              type="text"
+              placeholder="模型 ID（如 grok-4）"
+              font-mono text-sm w-full
+              p="x-2 y-1"
+              bg="transparent"
+              border="~ rounded base focus:purple-600"
+              outline="none"
+              class="h-8"
+            >
+            <div flex="~ gap-1 items-center">
+              <button
+                p-2 rounded cursor-pointer text-white transition-colors duration-200
+                class="bg-purple-600 hover:bg-purple-700 h-8 w-8"
+                flex items-center justify-center
+                title="保存"
+                @click="saveAdding"
+              >
+                <div i-carbon-checkmark />
+              </button>
+              <button
+                p-2 rounded cursor-pointer text-white transition-colors duration-200
+                class="bg-gray-500 hover:bg-gray-600 h-8 w-8"
+                flex items-center justify-center
+                title="取消"
+                @click="cancelAdding"
+              >
+                <div i-carbon-close />
+              </button>
+            </div>
+          </template>
+          <template v-else>
+            <button
+              flex="~ items-center gap-1.5" text-sm op-60 hover:op-100
+              cursor-pointer transition-opacity
+              @click="startAdding('Grok')"
+            >
+              <div i-carbon-add />
+              添加模型
+            </button>
+          </template>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -328,7 +651,7 @@ function handleRemoveModel(index: number) {
       <Input v-model="chatgptApiKey" type="password" />
     </div>
 
-    <div>
+    <div mb-4>
       <span label ml-0.5>
         API 地址
         <span ml-1 text-xs op-50>(留空使用默认地址)</span>
@@ -339,35 +662,26 @@ function handleRemoveModel(index: number) {
         placeholder="https://api.openai.com"
       />
     </div>
-  </div>
 
-  <!-- 模型列表 -->
-  <div mb-4 rounded-xl border="~ base" bg="white dark:black" p-6 text-left>
-    <div flex="~ items-center justify-between" mb-5>
-      <div flex="~ items-center gap-2">
-        <div w-1 h-6 rounded-full bg-gray-400 />
-        <h2 text-lg font-semibold>
-          模型列表
-        </h2>
+    <div>
+      <div flex="~ items-center justify-between" mb-3>
+        <span label ml-0.5>模型列表</span>
+        <button
+          text-sm op-60 hover:op-100 underline cursor-pointer transition-opacity
+          @click="handleResetModels('ChatGPT')"
+        >
+          重置为默认
+        </button>
       </div>
-      <button
-        text-sm op-60 hover:op-100 underline cursor-pointer transition-opacity
-        @click="handleResetModels"
-      >
-        重置为默认
-      </button>
-    </div>
-
-    <div ref="modelListRef" rounded-lg border="~ base" overflow-hidden>
-      <div
-        v-for="(model, index) in modelOptions"
-        :key="model.id"
-        px-4 py-2.5 flex="~ items-center gap-2"
-        border="b base"
-        class="last:border-b-0"
-      >
-        <template v-if="editingIndex === index">
-          <div flex="~ col gap-2" w-full>
+      <div ref="chatgptListRef" rounded-lg border="~ base" overflow-hidden>
+        <div
+          v-for="(modelId, index) in chatgptModels"
+          :key="modelId"
+          px-4 py-2.5 flex="~ items-center gap-2"
+          border="b base"
+          class="last:border-b-0"
+        >
+          <template v-if="editingIndex === index && editingProvider === 'ChatGPT'">
             <input
               ref="editingInputRef"
               v-model="editingModelId"
@@ -376,124 +690,104 @@ function handleRemoveModel(index: number) {
               font-mono text-sm w-full
               p="x-2 y-1"
               bg="transparent"
-              border="~ rounded base focus:teal-600"
+              border="~ rounded base focus:green-600"
               outline="none"
               class="h-8"
             >
-            <div flex="~ items-center gap-2">
-              <Select v-model="editingProvider" :options="providerOptions" type="inline" flex-1 />
-              <div flex="~ gap-1 items-center">
-                <button
-                  p-2 rounded cursor-pointer text-white transition-colors duration-200
-                  class="bg-teal-600 hover:bg-teal-700 h-8 w-8"
-                  flex items-center justify-center
-                  title="保存"
-                  @click="saveEditing(index)"
-                >
-                  <div i-carbon-checkmark />
-                </button>
-                <button
-                  p-2 rounded cursor-pointer text-white transition-colors duration-200
-                  class="bg-gray-500 hover:bg-gray-600 h-8 w-8"
-                  flex items-center justify-center
-                  title="取消"
-                  @click="cancelEditing"
-                >
-                  <div i-carbon-close />
-                </button>
-              </div>
+            <div flex="~ gap-1 items-center">
+              <button
+                p-2 rounded cursor-pointer text-white transition-colors duration-200
+                class="bg-green-600 hover:bg-green-700 h-8 w-8"
+                flex items-center justify-center
+                title="保存"
+                @click="saveEditingProvider('ChatGPT', index)"
+              >
+                <div i-carbon-checkmark />
+              </button>
+              <button
+                p-2 rounded cursor-pointer text-white transition-colors duration-200
+                class="bg-gray-500 hover:bg-gray-600 h-8 w-8"
+                flex items-center justify-center
+                title="取消"
+                @click="cancelEditing"
+              >
+                <div i-carbon-close />
+              </button>
             </div>
-          </div>
-        </template>
-        <template v-else>
-          <div class="drag-handle" i-carbon-draggable op-30 hover:op-70 cursor-grab active:cursor-grabbing flex-shrink-0 p-2 ml--2 />
-          <div flex-1 min-w-0 flex="~ items-center gap-2">
-            <span font-mono text-sm truncate flex-1 class="leading-8">{{ model.id }}</span>
-            <span
-              text-xs px-2 py-0.5 rounded-full font-medium
-              :class="{
-                'bg-teal-100 text-teal-700 dark:bg-teal-900 dark:text-teal-300': model.provider === 'Gemini',
-                'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300': model.provider === 'Grok',
-                'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300': model.provider === 'ChatGPT',
-              }"
-            >
-              {{ model.provider }}
-            </span>
-          </div>
-          <div flex="~ gap-1 items-center">
-            <button
-              p-2 rounded cursor-pointer text-white transition-colors duration-200
-              class="bg-teal-600 hover:bg-teal-700 h-8 w-8"
-              flex items-center justify-center
-              title="编辑"
-              @click="startEditing(index, model)"
-            >
-              <div i-carbon-edit />
-            </button>
-            <button
-              p-2 rounded cursor-pointer text-white transition-colors duration-200
-              class="bg-red-400 hover:bg-red-500 h-8 w-8"
-              flex items-center justify-center
-              title="删除"
-              @click="handleRemoveModel(index)"
-            >
-              <div i-carbon-trash-can />
-            </button>
-          </div>
-        </template>
-      </div>
+          </template>
+          <template v-else>
+            <div class="drag-handle" i-carbon-draggable op-30 hover:op-70 cursor-grab active:cursor-grabbing flex-shrink-0 p-2 ml--2 />
+            <span font-mono text-sm truncate flex-1 class="leading-8">{{ modelId }}</span>
+            <div flex="~ gap-1 items-center">
+              <button
+                p-2 rounded cursor-pointer text-white transition-colors duration-200
+                class="bg-green-600 hover:bg-green-700 h-8 w-8"
+                flex items-center justify-center
+                title="编辑"
+                @click="startEditingProvider('ChatGPT', index, modelId)"
+              >
+                <div i-carbon-edit />
+              </button>
+              <button
+                p-2 rounded cursor-pointer text-white transition-colors duration-200
+                class="bg-red-400 hover:bg-red-500 h-8 w-8"
+                flex items-center justify-center
+                title="删除"
+                @click="handleRemoveModel('ChatGPT', index)"
+              >
+                <div i-carbon-trash-can />
+              </button>
+            </div>
+          </template>
+        </div>
 
-      <!-- 添加新模型行 -->
-      <div px-4 py-2.5 flex="~ items-center gap-2">
-        <template v-if="isAdding">
-          <div flex="~ col gap-2" w-full>
+        <!-- 添加新模型行 -->
+        <div px-4 py-2.5 flex="~ items-center gap-2">
+          <template v-if="isAdding && newModelProvider === 'ChatGPT'">
             <input
               ref="addingInputRef"
               v-model="newModelId"
               type="text"
-              placeholder="模型 ID（如 gemini-2.5-flash）"
+              placeholder="模型 ID（如 gpt-4o）"
               font-mono text-sm w-full
               p="x-2 y-1"
               bg="transparent"
-              border="~ rounded base focus:teal-600"
+              border="~ rounded base focus:green-600"
               outline="none"
               class="h-8"
             >
-            <div flex="~ items-center gap-2">
-              <Select v-model="newModelProvider" :options="providerOptions" type="inline" flex-1 />
-              <div flex="~ gap-1 items-center">
-                <button
-                  p-2 rounded cursor-pointer text-white transition-colors duration-200
-                  class="bg-teal-600 hover:bg-teal-700 h-8 w-8"
-                  flex items-center justify-center
-                  title="保存"
-                  @click="saveAdding"
-                >
-                  <div i-carbon-checkmark />
-                </button>
-                <button
-                  p-2 rounded cursor-pointer text-white transition-colors duration-200
-                  class="bg-gray-500 hover:bg-gray-600 h-8 w-8"
-                  flex items-center justify-center
-                  title="取消"
-                  @click="cancelAdding"
-                >
-                  <div i-carbon-close />
-                </button>
-              </div>
+            <div flex="~ gap-1 items-center">
+              <button
+                p-2 rounded cursor-pointer text-white transition-colors duration-200
+                class="bg-green-600 hover:bg-green-700 h-8 w-8"
+                flex items-center justify-center
+                title="保存"
+                @click="saveAdding"
+              >
+                <div i-carbon-checkmark />
+              </button>
+              <button
+                p-2 rounded cursor-pointer text-white transition-colors duration-200
+                class="bg-gray-500 hover:bg-gray-600 h-8 w-8"
+                flex items-center justify-center
+                title="取消"
+                @click="cancelAdding"
+              >
+                <div i-carbon-close />
+              </button>
             </div>
-          </div>
-        </template>
-        <template v-else>
-          <button
-            flex="~ items-center gap-1.5" text-sm op-60 hover:op-100
-            cursor-pointer transition-opacity
-            @click="startAdding"
-          >
-            <div i-carbon-add />
-            添加模型
-          </button>
-        </template>
+          </template>
+          <template v-else>
+            <button
+              flex="~ items-center gap-1.5" text-sm op-60 hover:op-100
+              cursor-pointer transition-opacity
+              @click="startAdding('ChatGPT')"
+            >
+              <div i-carbon-add />
+              添加模型
+            </button>
+          </template>
+        </div>
       </div>
     </div>
   </div>

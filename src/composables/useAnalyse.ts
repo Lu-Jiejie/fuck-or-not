@@ -1,12 +1,12 @@
-import type { FavoriteResult, ModelOption } from '~/types'
+import type { AIProvider, FavoriteResult, ModelOption } from '~/types'
 import {
   createPartFromUri,
   createUserContent,
 } from '@google/genai'
 import { useStorage } from '@vueuse/core'
 import { useIDBKeyval } from '@vueuse/integrations/useIDBKeyval'
-import { computed, ref } from 'vue'
-import { chatgptApiKey, fileToBase64, generateContent, googleApiKey, grokApiKey, modelOptions, saveImage, uploadFileToAPI } from '~/logic'
+import { computed, ref, watch } from 'vue'
+import { chatgptApiKey, fileToBase64, generateContent, getProviderModels, googleApiKey, grokApiKey, modelOptions, saveImage, uploadFileToAPI } from '~/logic'
 import { defaultConcisePrompt, defaultDetailedPrompt, defaultNovelPrompt } from '~/logic/prompts'
 
 export function useAnalyse() {
@@ -17,7 +17,8 @@ export function useAnalyse() {
   const detailedPrompt = useStorage('detailed-prompt', '')
   const novelPrompt = useStorage('novel-prompt', '')
   const customPrompts = useStorage('custom-prompt', '')
-  const selectedModelId = useStorage('selected-model', 'gemini-2.0-flash')
+  const selectedProvider = useStorage<AIProvider>('selected-provider', 'Gemini')
+  const selectedModelId = useStorage('selected-model', 'gemini-2.5-flash')
   const selectedMode = useStorage<'concise' | 'detailed' | 'novel' | 'custom'>('selected-mode', 'novel')
   const uploadType = useStorage<'base64' | 'api'>('upload-type', 'base64')
   const result = ref('')
@@ -28,7 +29,27 @@ export function useAnalyse() {
   const favoriteResults = useIDBKeyval('favorite-results', [] as FavoriteResult[])
   const lastFavoriteResult = ref<FavoriteResult | null>(null)
 
+  // 当提供商改变时，自动选择该提供商的第一个模型
+  watch(selectedProvider, (newProvider) => {
+    const models = getProviderModels(newProvider)
+    if (models.length > 0 && !models.includes(selectedModelId.value)) {
+      selectedModelId.value = models[0]
+    }
+  })
+
+  const currentProviderModels = computed(() => {
+    return getProviderModels(selectedProvider.value)
+  })
+
   const selectedModel = computed<ModelOption | undefined>(() => {
+    // 先尝试从新的分组模型中查找
+    if (currentProviderModels.value.includes(selectedModelId.value)) {
+      return {
+        id: selectedModelId.value,
+        provider: selectedProvider.value,
+      }
+    }
+    // 兼容旧版：从 modelOptions 中查找
     return modelOptions.value.find(m => m.id === selectedModelId.value)
   })
 
@@ -36,10 +57,16 @@ export function useAnalyse() {
     return !selectedModelId.value || !selectedMode.value || !image.value
   })
 
+  const providerSelectOptions = computed(() => [
+    { label: 'Gemini', value: 'Gemini' as AIProvider },
+    { label: 'Grok', value: 'Grok' as AIProvider },
+    { label: 'ChatGPT', value: 'ChatGPT' as AIProvider },
+  ])
+
   const modelSelectOptions = computed(() => {
-    return modelOptions.value.map(model => ({
-      label: `[${model.provider}] ${model.id}`,
-      value: model.id,
+    return currentProviderModels.value.map(modelId => ({
+      label: modelId,
+      value: modelId,
     }))
   })
 
@@ -210,6 +237,7 @@ export function useAnalyse() {
 
   return {
     image,
+    selectedProvider,
     selectedModelId,
     selectedMode,
     selectedModel,
@@ -219,6 +247,7 @@ export function useAnalyse() {
     analyseButtonLoading,
     analyseButtonDisabled,
     saveButtonDisabled,
+    providerSelectOptions,
     modelSelectOptions,
     modeOptions,
     analyseMethodOptions,

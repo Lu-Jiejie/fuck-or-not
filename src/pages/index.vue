@@ -12,6 +12,7 @@ defineOptions({
 
 const {
   image,
+  selectedProvider,
   selectedModelId,
   selectedMode,
   selectedModel,
@@ -21,6 +22,7 @@ const {
   analyseButtonLoading,
   analyseButtonDisabled,
   saveButtonDisabled,
+  providerSelectOptions,
   modelSelectOptions,
   modeOptions,
   analyseMethodOptions,
@@ -41,6 +43,10 @@ const {
 
   <!-- 配置区 -->
   <div mb-4 rounded-xl border="~ base" bg="white dark:black" p-6 text-left>
+    <div mb-5>
+      <span label ml-0.5>提供商</span>
+      <Select v-model="selectedProvider" :options="providerSelectOptions" />
+    </div>
     <div mb-5>
       <span label ml-0.5>模型</span>
       <Select v-model="selectedModelId" :options="modelSelectOptions" />
