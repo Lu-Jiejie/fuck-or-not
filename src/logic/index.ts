@@ -251,6 +251,7 @@ export async function generateContent(model: string, contents: ContentListUnion,
           model,
           messages: mergedMessages,
           temperature: 0.7,
+          stream: true,
         }),
       })
 
@@ -260,13 +261,53 @@ export async function generateContent(model: string, contents: ContentListUnion,
         throw new Error(`Grok API error (${response.status}): ${error}`)
       }
 
-      const data = await response.json()
+      // Handle SSE stream response
+      const reader = response.body?.getReader()
+      if (!reader) {
+        throw new Error('Response body is not readable')
+      }
+
+      const decoder = new TextDecoder()
+      let fullText = ''
+      let finishReason = 'STOP'
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done)
+          break
+
+        const chunk = decoder.decode(value, { stream: true })
+        const lines = chunk.split('\n')
+
+        for (const line of lines) {
+          if (!line.trim() || !line.startsWith('data: '))
+            continue
+
+          const dataStr = line.slice(6) // Remove 'data: ' prefix
+          if (dataStr === '[DONE]')
+            continue
+
+          try {
+            const data = JSON.parse(dataStr)
+            const delta = data.choices?.[0]?.delta
+            if (delta?.content) {
+              fullText += delta.content
+            }
+            if (data.choices?.[0]?.finish_reason) {
+              finishReason = data.choices[0].finish_reason
+            }
+          }
+          catch (parseError) {
+            console.warn('[Grok] Failed to parse chunk:', dataStr, parseError)
+          }
+        }
+      }
 
       // Convert OpenAI format response to Google AI format
       return {
-        text: data.choices[0]?.message?.content || '',
+        text: fullText,
         candidates: [{
-          finishReason: data.choices[0]?.finish_reason === 'content_filter' ? 'PROHIBITED_CONTENT' : 'STOP',
+          finishReason: finishReason === 'content_filter' ? 'PROHIBITED_CONTENT' : 'STOP',
         }],
       }
     }
