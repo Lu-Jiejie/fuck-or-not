@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import Button from '~/components/Button.vue'
-import ButtonSelect from '~/components/ButtonSelect.vue'
 import ImageUploader from '~/components/ImageUploader.vue'
 import MarkdownRenderer from '~/components/MarkdownRenderer.vue'
 import Select from '~/components/Select.vue'
@@ -14,8 +13,9 @@ const {
   image,
   selectedProvider,
   selectedModelId,
-  selectedMode,
+  selectedPromptId,
   selectedModel,
+  additionalPrompt,
   uploadType,
   result,
   errorMsg,
@@ -24,7 +24,7 @@ const {
   saveButtonDisabled,
   providerSelectOptions,
   modelSelectOptions,
-  modeOptions,
+  promptSelectOptions,
   analyseMethodOptions,
   handleAnalyseButtonClick,
   handleSaveButtonClick,
@@ -52,8 +52,8 @@ const {
       <Select v-model="selectedModelId" :options="modelSelectOptions" />
     </div>
     <div>
-      <span label ml-0.5>模式</span>
-      <ButtonSelect v-model="selectedMode" :options="modeOptions" />
+      <span label ml-0.5>Prompt</span>
+      <Select v-model="selectedPromptId" :options="promptSelectOptions" />
     </div>
   </div>
 
@@ -64,6 +64,22 @@ const {
       <ImageUploader v-model="image" />
     </div>
     <Select v-if="selectedModel?.provider === 'Gemini'" v-model="uploadType" :options="analyseMethodOptions" />
+  </div>
+
+  <!-- 额外提示词 -->
+  <div mb-4 rounded-xl border="~ base" bg="white dark:black" p-6 text-left>
+    <span label ml-0.5>额外提示词（可选）</span>
+    <textarea
+      v-model="additionalPrompt"
+      placeholder="描述图片细节或补充说明，帮助 AI 更好地理解和分析......"
+      rows="3"
+      w-full px-3 py-2 rounded-lg
+      border="~ base focus:teal-600"
+      bg="transparent"
+      outline="none"
+      resize-y
+      transition-colors duration-200
+    />
   </div>
 
   <!-- 分析按钮 -->

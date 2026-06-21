@@ -8,52 +8,115 @@ import { nextTick, onMounted, ref } from 'vue'
 import Input from '~/components/Input.vue'
 import Textarea from '~/components/Textarea.vue'
 import { webdavAction, webdavDownload, webdavPassword, webdavProgress, webdavStatus, webdavSyncing, webdavUpload, webdavUrl, webdavUsername } from '~/composables/useWebDAV'
-import { addProviderModel, chatgptApiKey, chatgptApiUrl, chatgptModels, geminiApiUrl, geminiModels, grokApiKey, grokApiUrl, grokModels, removeProviderModel, resetProviderModels, updateProviderModel } from '~/logic'
-
-import { defaultConcisePrompt, defaultDetailedPrompt, defaultNovelPrompt } from '~/logic/prompts'
+import { addPrompt, addProviderModel, chatgptApiKey, chatgptApiUrl, chatgptModels, customPrompts, geminiApiUrl, geminiModels, grokApiKey, grokApiUrl, grokModels, removePrompt, removeProviderModel, resetPrompts, resetProviderModels, updatePrompt, updateProviderModel } from '~/logic'
 
 const googleApiKey = useStorage('google-api-key', '')
-const concisePrompt = useStorage('concise-prompt', '')
-const detailedPrompt = useStorage('detailed-prompt', '')
-const novelPrompt = useStorage('novel-prompt', '')
-const customPrompts = useStorage('custom-prompt', '')
 
 // 用于访问 IndexedDB 中的图片和收藏结果
 const imageStore = useIDBKeyval<Record<string, string>>('favorite-images', {})
 const favoriteResults = useIDBKeyval('favorite-results', [] as any[])
 
-const defaultPrompts = [
-  defaultConcisePrompt,
-  defaultDetailedPrompt,
-  defaultNovelPrompt,
-]
-const prompts = [
-  concisePrompt,
-  detailedPrompt,
-  novelPrompt,
-]
+// Prompt 编辑状态
+const editingPromptId = ref<string | null>(null)
+const editingPromptName = ref('')
+const editingPromptContent = ref('')
+const isAddingPrompt = ref(false)
+const newPromptName = ref('')
+const newPromptContent = ref('')
+const promptInputRef = ref<HTMLInputElement[]>([])
+const addingPromptInputRef = ref<HTMLInputElement | null>(null)
 
-function getDefaultPrompt(mode: 0 | 1 | 2) {
-  const defaultPrompt = defaultPrompts[mode]
-  const prompt = prompts[mode]
-
-  if (prompt.value.trim() !== '') {
-    if (!confirm('当前模式的 Prompt 已被自定义，获取默认 Prompt 将覆盖现有内容，是否继续？')) {
-      return
-    }
-  }
-  prompt.value = defaultPrompt
+function startEditingPrompt(id: string, name: string, content: string) {
+  cancelAddingPrompt()
+  editingPromptId.value = id
+  editingPromptName.value = name
+  editingPromptContent.value = content
+  nextTick(() => {
+    promptInputRef.value[0]?.focus()
+  })
 }
 
-function clearPrompt(mode: 0 | 1 | 2) {
-  const prompt = prompts[mode]
-  if (prompt.value.trim() !== '') {
-    if (!confirm('当前模式的 Prompt 已被自定义，清空将丢失现有内容，是否继续？')) {
-      return
-    }
-  }
-  prompt.value = ''
+function cancelEditingPrompt() {
+  editingPromptId.value = null
+  editingPromptName.value = ''
+  editingPromptContent.value = ''
 }
+
+function saveEditingPrompt() {
+  if (!editingPromptName.value.trim()) {
+    alert('请填写 Prompt 名称')
+    return
+  }
+  if (editingPromptId.value) {
+    updatePrompt(editingPromptId.value, {
+      name: editingPromptName.value.trim(),
+      content: editingPromptContent.value,
+    })
+  }
+  cancelEditingPrompt()
+}
+
+function startAddingPrompt() {
+  cancelEditingPrompt()
+  isAddingPrompt.value = true
+  newPromptName.value = ''
+  newPromptContent.value = ''
+  nextTick(() => {
+    addingPromptInputRef.value?.focus()
+  })
+}
+
+function cancelAddingPrompt() {
+  isAddingPrompt.value = false
+  newPromptName.value = ''
+  newPromptContent.value = ''
+}
+
+function saveAddingPrompt() {
+  if (!newPromptName.value.trim()) {
+    alert('请填写 Prompt 名称')
+    return
+  }
+  addPrompt(newPromptName.value.trim(), newPromptContent.value)
+  cancelAddingPrompt()
+}
+
+function handleRemovePrompt(id: string) {
+  if (customPrompts.value.length <= 1) {
+    alert('至少需要保留一个 Prompt')
+    return
+  }
+  if (confirm('确定要删除这个 Prompt 吗？')) {
+    removePrompt(id)
+  }
+}
+
+function handleResetPrompts() {
+  if (confirm('确定要重置为默认 Prompt 列表吗？这将丢失所有自定义修改。')) {
+    resetPrompts()
+  }
+}
+
+// Prompt 列表拖拽排序
+const promptListRef = ref<HTMLElement | null>(null)
+
+onMounted(() => {
+  if (promptListRef.value) {
+    Sortable.create(promptListRef.value, {
+      animation: 150,
+      handle: '.drag-handle',
+      ghostClass: 'sortable-ghost',
+      onEnd({ oldIndex, newIndex }) {
+        if (oldIndex === undefined || newIndex === undefined || oldIndex === newIndex)
+          return
+        const list = [...customPrompts.value]
+        const [item] = list.splice(oldIndex, 1)
+        list.splice(newIndex, 0, item)
+        customPrompts.value = list
+      },
+    })
+  }
+})
 
 const editingIndex = ref<number | null>(null)
 const editingModelId = ref('')
@@ -99,61 +162,6 @@ function handleResetModels(provider?: AIProvider) {
   }
 }
 
-const geminiListRef = ref<HTMLElement | null>(null)
-const grokListRef = ref<HTMLElement | null>(null)
-const chatgptListRef = ref<HTMLElement | null>(null)
-
-onMounted(() => {
-  // 为每个提供商的模型列表创建可拖拽排序
-  if (geminiListRef.value) {
-    Sortable.create(geminiListRef.value, {
-      animation: 150,
-      handle: '.drag-handle',
-      ghostClass: 'sortable-ghost',
-      onEnd({ oldIndex, newIndex }) {
-        if (oldIndex === undefined || newIndex === undefined || oldIndex === newIndex)
-          return
-        const list = [...geminiModels.value]
-        const [item] = list.splice(oldIndex, 1)
-        list.splice(newIndex, 0, item)
-        geminiModels.value = list
-      },
-    })
-  }
-
-  if (grokListRef.value) {
-    Sortable.create(grokListRef.value, {
-      animation: 150,
-      handle: '.drag-handle',
-      ghostClass: 'sortable-ghost',
-      onEnd({ oldIndex, newIndex }) {
-        if (oldIndex === undefined || newIndex === undefined || oldIndex === newIndex)
-          return
-        const list = [...grokModels.value]
-        const [item] = list.splice(oldIndex, 1)
-        list.splice(newIndex, 0, item)
-        grokModels.value = list
-      },
-    })
-  }
-
-  if (chatgptListRef.value) {
-    Sortable.create(chatgptListRef.value, {
-      animation: 150,
-      handle: '.drag-handle',
-      ghostClass: 'sortable-ghost',
-      onEnd({ oldIndex, newIndex }) {
-        if (oldIndex === undefined || newIndex === undefined || oldIndex === newIndex)
-          return
-        const list = [...chatgptModels.value]
-        const [item] = list.splice(oldIndex, 1)
-        list.splice(newIndex, 0, item)
-        chatgptModels.value = list
-      },
-    })
-  }
-})
-
 const settingsFileInputRef = ref<HTMLInputElement | null>(null)
 
 async function onExportSettings() {
@@ -176,9 +184,6 @@ async function onExportSettings() {
       geminiModels: geminiModels.value,
       grokModels: grokModels.value,
       chatgptModels: chatgptModels.value,
-      concisePrompt: concisePrompt.value,
-      detailedPrompt: detailedPrompt.value,
-      novelPrompt: novelPrompt.value,
       customPrompts: customPrompts.value,
     }
 
@@ -210,7 +215,7 @@ async function onExportSettings() {
         for (let i = 0; i < byteCharacters.length; i++) {
           byteNumbers[i] = byteCharacters.charCodeAt(i)
         }
-        const byteArray = new Uint8Array(byteNumbers)
+        const byteArray = new Uint8Array(byteNumbers as number[])
 
         // 添加图片文件到 zip
         imagesFolder?.file(`${key}.${extension}`, byteArray)
@@ -423,14 +428,30 @@ async function importSettings(data: any) {
       chatgptModels.value = chatgpt
   }
 
-  if (data.concisePrompt !== undefined)
-    concisePrompt.value = data.concisePrompt
-  if (data.detailedPrompt !== undefined)
-    detailedPrompt.value = data.detailedPrompt
-  if (data.novelPrompt !== undefined)
-    novelPrompt.value = data.novelPrompt
-  if (data.customPrompts !== undefined)
+  // 导入 Prompt 配置
+  if (Array.isArray(data.customPrompts) && data.customPrompts.length > 0) {
+    // 新格式：直接是 CustomPrompt 数组
     customPrompts.value = data.customPrompts
+  }
+  else {
+    // 兼容旧格式：单个 prompt 字符串
+    const migrated = []
+    if (data.concisePrompt !== undefined && data.concisePrompt !== '') {
+      migrated.push({ id: 'concise', name: '简洁', content: data.concisePrompt })
+    }
+    if (data.detailedPrompt !== undefined && data.detailedPrompt !== '') {
+      migrated.push({ id: 'detailed', name: '详细', content: data.detailedPrompt })
+    }
+    if (data.novelPrompt !== undefined && data.novelPrompt !== '') {
+      migrated.push({ id: 'novel', name: '小说', content: data.novelPrompt })
+    }
+    if (data.customPrompts !== undefined && data.customPrompts !== '') {
+      migrated.push({ id: 'custom', name: '自定义', content: data.customPrompts })
+    }
+    if (migrated.length > 0) {
+      customPrompts.value = migrated
+    }
+  }
 }
 
 function startAdding(provider: AIProvider) {
@@ -517,7 +538,7 @@ function handleRemoveModel(provider: AIProvider, index: number) {
           重置为默认
         </button>
       </div>
-      <div ref="geminiListRef" rounded-lg border="~ base" overflow-hidden>
+      <div rounded-lg border="~ base" overflow-hidden>
         <div
           v-for="(modelId, index) in geminiModels"
           :key="modelId"
@@ -679,7 +700,7 @@ function handleRemoveModel(provider: AIProvider, index: number) {
           重置为默认
         </button>
       </div>
-      <div ref="grokListRef" rounded-lg border="~ base" overflow-hidden>
+      <div rounded-lg border="~ base" overflow-hidden>
         <div
           v-for="(modelId, index) in grokModels"
           :key="modelId"
@@ -841,7 +862,7 @@ function handleRemoveModel(provider: AIProvider, index: number) {
           重置为默认
         </button>
       </div>
-      <div ref="chatgptListRef" rounded-lg border="~ base" overflow-hidden>
+      <div rounded-lg border="~ base" overflow-hidden>
         <div
           v-for="(modelId, index) in chatgptModels"
           :key="modelId"
@@ -960,6 +981,161 @@ function handleRemoveModel(provider: AIProvider, index: number) {
     </div>
   </div>
 
+  <!-- Prompt 配置 -->
+  <div mb-4 rounded-xl border="~ base" bg="white dark:black" p-6 text-left>
+    <div flex="~ items-center justify-between" mb-5>
+      <div flex="~ items-center gap-2">
+        <div w-1 h-6 rounded-full class="bg-orange-500" />
+        <h2 text-lg font-semibold>
+          Prompt 配置
+        </h2>
+      </div>
+      <button
+        text-sm op-60 hover:op-100 underline cursor-pointer transition-opacity
+        @click="handleResetPrompts"
+      >
+        重置为默认
+      </button>
+    </div>
+
+    <div ref="promptListRef" rounded-lg border="~ base" overflow-hidden>
+      <div
+        v-for="prompt in customPrompts"
+        :key="prompt.id"
+        px-4 py-3 flex="~ col gap-3"
+        border="b base"
+        class="last:border-b-0"
+      >
+        <template v-if="editingPromptId === prompt.id">
+          <div flex="~ col gap-2" w-full>
+            <input
+              ref="promptInputRef"
+              v-model="editingPromptName"
+              type="text"
+              placeholder="Prompt 名称"
+              text-sm w-full
+              p="x-2 y-1"
+              bg="transparent"
+              border="~ rounded base focus:orange-600"
+              outline="none"
+              class="h-8"
+            >
+            <Textarea v-model="editingPromptContent" placeholder="Prompt 内容" />
+            <div flex="~ gap-1 items-center justify-end">
+              <button
+                p-2 rounded cursor-pointer text-white transition-colors duration-200
+                class="bg-orange-600 hover:bg-orange-700 h-8 w-8"
+                flex items-center justify-center
+                title="保存"
+                @click="saveEditingPrompt"
+              >
+                <div i-carbon-checkmark />
+              </button>
+              <button
+                p-2 rounded cursor-pointer text-white transition-colors duration-200
+                class="bg-gray-500 hover:bg-gray-600 h-8 w-8"
+                flex items-center justify-center
+                title="取消"
+                @click="cancelEditingPrompt"
+              >
+                <div i-carbon-close />
+              </button>
+            </div>
+          </div>
+        </template>
+        <template v-else>
+          <div flex="~ items-center justify-between">
+            <div flex="~ items-center gap-2" flex-1>
+              <div class="drag-handle" i-carbon-draggable op-30 hover:op-70 cursor-grab active:cursor-grabbing flex-shrink-0 />
+              <span font-semibold text-base>{{ prompt.name }}</span>
+            </div>
+            <div flex="~ gap-1 items-center">
+              <button
+                p-2 rounded cursor-pointer text-white transition-colors duration-200
+                class="bg-orange-600 hover:bg-orange-700 h-8 w-8"
+                flex items-center justify-center
+                title="编辑"
+                @click="startEditingPrompt(prompt.id, prompt.name, prompt.content)"
+              >
+                <div i-carbon-edit />
+              </button>
+              <button
+                p-2 rounded cursor-pointer text-white transition-colors duration-200
+                class="bg-red-400 hover:bg-red-500 h-8 w-8"
+                flex items-center justify-center
+                title="删除"
+                @click="handleRemovePrompt(prompt.id)"
+              >
+                <div i-carbon-trash-can />
+              </button>
+            </div>
+          </div>
+          <div
+            v-if="prompt.content"
+            text-sm op-70 whitespace-pre-wrap
+            class="line-clamp-3"
+          >
+            {{ prompt.content }}
+          </div>
+          <div v-else text-sm op-50 italic>
+            暂无内容
+          </div>
+        </template>
+      </div>
+
+      <!-- 添加新 Prompt 行 -->
+      <div px-4 py-3 flex="~ items-center gap-2">
+        <template v-if="isAddingPrompt">
+          <div flex="~ col gap-2" w-full>
+            <input
+              ref="addingPromptInputRef"
+              v-model="newPromptName"
+              type="text"
+              placeholder="Prompt 名称（如：情节续写）"
+              text-sm w-full
+              p="x-2 y-1"
+              bg="transparent"
+              border="~ rounded base focus:orange-600"
+              outline="none"
+              class="h-8"
+            >
+            <Textarea v-model="newPromptContent" placeholder="Prompt 内容（可选）" />
+            <div flex="~ gap-1 items-center justify-end">
+              <button
+                p-2 rounded cursor-pointer text-white transition-colors duration-200
+                class="bg-orange-600 hover:bg-orange-700 h-8 w-8"
+                flex items-center justify-center
+                title="保存"
+                @click="saveAddingPrompt"
+              >
+                <div i-carbon-checkmark />
+              </button>
+              <button
+                p-2 rounded cursor-pointer text-white transition-colors duration-200
+                class="bg-gray-500 hover:bg-gray-600 h-8 w-8"
+                flex items-center justify-center
+                title="取消"
+                @click="cancelAddingPrompt"
+              >
+                <div i-carbon-close />
+              </button>
+            </div>
+          </div>
+        </template>
+        <template v-else>
+          <button
+            flex="~ items-center gap-1.5" text-sm op-60 hover:op-100
+            cursor-pointer transition-opacity
+            @click="startAddingPrompt"
+          >
+            <div i-carbon-add />
+            添加 Prompt
+          </button>
+        </template>
+      </div>
+    </div>
+  </div>
+
   <!-- WebDAV 同步 -->
   <div mb-4 rounded-xl border="~ base" bg="white dark:black" p-6 text-left>
     <div flex="~ items-center gap-2" mb-5>
@@ -1028,68 +1204,6 @@ function handleRemoveModel(provider: AIProvider, index: number) {
 
     <div v-if="webdavStatus" mt-3 text-sm :class="webdavStatus.includes('失败') ? 'text-red-400' : 'text-teal-600 dark:text-teal-400'">
       {{ webdavStatus }}
-    </div>
-  </div>
-
-  <!-- Prompt 配置 -->
-  <div mb-4 rounded-xl border="~ base" bg="white dark:black" p-6 text-left>
-    <div flex="~ items-center gap-2" mb-5>
-      <div w-1 h-6 rounded-full class="bg-orange-500" />
-      <h2 text-lg font-semibold>
-        Prompt 配置
-      </h2>
-    </div>
-
-    <div mb-5>
-      <span label ml-0.5>
-        简洁模式 Prompt
-        <a
-          ml-1 underline cursor-pointer op-60 hover:op-100 transition-opacity
-          @click.prevent="getDefaultPrompt(0)"
-        >获取默认</a>
-        <a
-          ml-2 underline cursor-pointer op-60 hover:op-100 transition-opacity
-          @click.prevent="clearPrompt(0)"
-        >清空</a>
-      </span>
-      <Textarea v-model="concisePrompt" placeholder="留空将使用默认配置......" />
-    </div>
-
-    <div mb-5>
-      <span label ml-0.5>
-        详细模式 Prompt
-        <a
-          ml-1 underline cursor-pointer op-60 hover:op-100 transition-opacity
-          @click.prevent="getDefaultPrompt(1)"
-        >获取默认</a>
-        <a
-          ml-2 underline cursor-pointer op-60 hover:op-100 transition-opacity
-          @click.prevent="clearPrompt(1)"
-        >清空</a>
-      </span>
-      <Textarea v-model="detailedPrompt" placeholder="留空将使用默认配置......" />
-    </div>
-
-    <div mb-5>
-      <span label ml-0.5>
-        小说模式 Prompt
-        <a
-          ml-1 underline cursor-pointer op-60 hover:op-100 transition-opacity
-          @click.prevent="getDefaultPrompt(2)"
-        >获取默认</a>
-        <a
-          ml-2 underline cursor-pointer op-60 hover:op-100 transition-opacity
-          @click.prevent="clearPrompt(2)"
-        >清空</a>
-      </span>
-      <Textarea v-model="novelPrompt" placeholder="留空将使用默认配置......" />
-    </div>
-
-    <div>
-      <span label ml-0.5>
-        自定义模式 Prompt
-      </span>
-      <Textarea v-model="customPrompts" placeholder="也许你需要第四个 prompt ，留空将不启用......" />
     </div>
   </div>
 

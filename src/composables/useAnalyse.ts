@@ -6,20 +6,16 @@ import {
 import { useStorage } from '@vueuse/core'
 import { useIDBKeyval } from '@vueuse/integrations/useIDBKeyval'
 import { computed, ref, watch } from 'vue'
-import { chatgptApiKey, fileToBase64, generateContent, getProviderModels, googleApiKey, grokApiKey, modelOptions, saveImage, uploadFileToAPI } from '~/logic'
-import { defaultConcisePrompt, defaultDetailedPrompt, defaultNovelPrompt } from '~/logic/prompts'
+import { chatgptApiKey, customPrompts, fileToBase64, generateContent, getPromptById, getProviderModels, googleApiKey, grokApiKey, modelOptions, saveImage, uploadFileToAPI } from '~/logic'
 
 export function useAnalyse() {
   const image = ref<File | null>(null)
   const base64Image = ref<string | null>(null)
 
-  const concisePrompt = useStorage('concise-prompt', '')
-  const detailedPrompt = useStorage('detailed-prompt', '')
-  const novelPrompt = useStorage('novel-prompt', '')
-  const customPrompts = useStorage('custom-prompt', '')
   const selectedProvider = useStorage<AIProvider>('selected-provider', 'Gemini')
   const selectedModelId = useStorage('selected-model', 'gemini-2.5-flash')
-  const selectedMode = useStorage<'concise' | 'detailed' | 'novel' | 'custom'>('selected-mode', 'novel')
+  const selectedPromptId = useStorage('selected-prompt-id', 'novel')
+  const additionalPrompt = ref('')
   const uploadType = useStorage<'base64' | 'api'>('upload-type', 'base64')
   const result = ref('')
   const errorMsg = ref('')
@@ -37,6 +33,14 @@ export function useAnalyse() {
     }
   })
 
+  // 确保选中的 Prompt ID 有效
+  watch(() => customPrompts.value, () => {
+    const exists = customPrompts.value.some(p => p.id === selectedPromptId.value)
+    if (!exists && customPrompts.value.length > 0) {
+      selectedPromptId.value = customPrompts.value[0].id
+    }
+  }, { immediate: true, deep: true })
+
   const currentProviderModels = computed(() => {
     return getProviderModels(selectedProvider.value)
   })
@@ -53,8 +57,12 @@ export function useAnalyse() {
     return modelOptions.value.find(m => m.id === selectedModelId.value)
   })
 
+  const selectedPrompt = computed(() => {
+    return getPromptById(selectedPromptId.value)
+  })
+
   const analyseButtonDisabled = computed(() => {
-    return !selectedModelId.value || !selectedMode.value || !image.value
+    return !selectedModelId.value || !selectedPromptId.value || !image.value
   })
 
   const providerSelectOptions = computed(() => [
@@ -70,16 +78,11 @@ export function useAnalyse() {
     }))
   })
 
-  const modeOptions = computed(() => {
-    const options = [
-      { label: '简洁', subLabel: '简短1-2句，够味', value: 'concise' },
-      { label: '详细', subLabel: '细嗦3+句，够劲', value: 'detailed' },
-      { label: '小说', subLabel: '400字以上，够硬核', value: 'novel' },
-    ]
-    if (customPrompts.value !== '') {
-      options.push({ label: '自定义', subLabel: 'XP，够自由', value: 'custom' })
-    }
-    return options
+  const promptSelectOptions = computed(() => {
+    return customPrompts.value.map(prompt => ({
+      label: prompt.name,
+      value: prompt.id,
+    }))
   })
 
   const analyseMethodOptions = [
@@ -122,31 +125,28 @@ export function useAnalyse() {
       return
     }
 
+    if (!selectedPrompt.value) {
+      errorMsg.value = '请先选择 Prompt。'
+      return
+    }
+
     analyseButtonLoading.value = true
 
     try {
       let response
       let lastImage
-      let finalPrompt = ''
-      switch (selectedMode.value) {
-        case 'concise':
-          finalPrompt = concisePrompt.value || defaultConcisePrompt
-          break
-        case 'detailed':
-          finalPrompt = detailedPrompt.value || defaultDetailedPrompt
-          break
-        case 'novel':
-          finalPrompt = novelPrompt.value || defaultNovelPrompt
-          break
-        default:
-          finalPrompt = customPrompts.value
+      let finalPrompt = selectedPrompt.value.content || '分析这张图片'
+
+      // 如果有额外的提示词，添加到最终 Prompt 中
+      if (additionalPrompt.value.trim()) {
+        finalPrompt = `${finalPrompt}\n\n用户补充说明：${additionalPrompt.value.trim()}`
       }
 
       if (uploadType.value === 'api' && currentProvider === 'Gemini') {
         const uploadedFile = await uploadFileToAPI(image.value)
         const contents = createUserContent([
           createPartFromUri(uploadedFile.uri!, uploadedFile.mimeType!),
-          finalPrompt || '分析这张图片',
+          finalPrompt,
         ])
         response = await generateContent(
           selectedModel.value.id,
@@ -167,7 +167,7 @@ export function useAnalyse() {
             },
           },
           {
-            text: finalPrompt || '分析这张图片',
+            text: finalPrompt,
           },
         ]
         response = await generateContent(
@@ -195,7 +195,7 @@ export function useAnalyse() {
         errorMsg.value = ''
         lastFavoriteResult.value = {
           model: selectedModel.value.id,
-          mode: selectedMode.value,
+          mode: selectedPromptId.value,
           imageHash: '',
           mimeType: image.value!.type,
           time: Date.now(),
@@ -239,8 +239,10 @@ export function useAnalyse() {
     image,
     selectedProvider,
     selectedModelId,
-    selectedMode,
+    selectedPromptId,
     selectedModel,
+    selectedPrompt,
+    additionalPrompt,
     uploadType,
     result,
     errorMsg,
@@ -249,7 +251,7 @@ export function useAnalyse() {
     saveButtonDisabled,
     providerSelectOptions,
     modelSelectOptions,
-    modeOptions,
+    promptSelectOptions,
     analyseMethodOptions,
     handleAnalyseButtonClick,
     handleSaveButtonClick,

@@ -1,9 +1,10 @@
 import type { ContentListUnion } from '@google/genai'
-import type { AIProvider, ModelOption } from '~/types'
+import type { AIProvider, CustomPrompt, ModelOption } from '~/types'
 import { GoogleGenAI, HarmBlockThreshold, HarmCategory } from '@google/genai'
 import { useDark, useStorage, useToggle } from '@vueuse/core'
 import { useIDBKeyval } from '@vueuse/integrations/useIDBKeyval'
 import { ref, watch } from 'vue'
+import { defaultConcisePrompt, defaultDetailedPrompt, defaultNovelPrompt } from './prompts'
 
 export const isDark = useDark()
 export const toggleDark = useToggle(isDark)
@@ -14,6 +15,163 @@ export const grokApiKey = useStorage('grok-api-key', '')
 export const grokApiUrl = useStorage('grok-api-url', '')
 export const chatgptApiKey = useStorage('chatgpt-api-key', '')
 export const chatgptApiUrl = useStorage('chatgpt-api-url', '')
+
+// 默认 Prompt 列表
+export const defaultPrompts: CustomPrompt[] = [
+  {
+    id: 'concise',
+    name: '简洁',
+    content: defaultConcisePrompt,
+  },
+  {
+    id: 'detailed',
+    name: '详细',
+    content: defaultDetailedPrompt,
+  },
+  {
+    id: 'novel',
+    name: '小说',
+    content: defaultNovelPrompt,
+  },
+]
+
+// 用户自定义 Prompt 列表
+export const customPrompts = useStorage<CustomPrompt[]>('custom-prompts', [])
+
+// 从旧版单个 Prompt 存储迁移到新的列表格式
+function migratePrompts() {
+  // 如果新版已有数据，跳过迁移
+  if (customPrompts.value.length > 0) {
+    return
+  }
+
+  const migrated: CustomPrompt[] = []
+
+  // 尝试读取旧版 Prompt（直接从 localStorage 读取，不使用 useStorage）
+  try {
+    const oldConcise = localStorage.getItem('concise-prompt')
+    const oldDetailed = localStorage.getItem('detailed-prompt')
+    const oldNovel = localStorage.getItem('novel-prompt')
+    const oldCustom = localStorage.getItem('custom-prompt')
+
+    // 迁移简洁模式
+    if (oldConcise) {
+      try {
+        const content = JSON.parse(oldConcise)
+        if (content && content !== '') {
+          migrated.push({ id: 'concise', name: '简洁', content })
+        }
+      }
+      catch {
+        // 如果不是 JSON，可能是直接存储的字符串
+        if (oldConcise && oldConcise !== '' && oldConcise !== 'null' && oldConcise !== 'undefined') {
+          migrated.push({ id: 'concise', name: '简洁', content: oldConcise })
+        }
+      }
+    }
+
+    // 迁移详细模式
+    if (oldDetailed) {
+      try {
+        const content = JSON.parse(oldDetailed)
+        if (content && content !== '') {
+          migrated.push({ id: 'detailed', name: '详细', content })
+        }
+      }
+      catch {
+        if (oldDetailed && oldDetailed !== '' && oldDetailed !== 'null' && oldDetailed !== 'undefined') {
+          migrated.push({ id: 'detailed', name: '详细', content: oldDetailed })
+        }
+      }
+    }
+
+    // 迁移小说模式
+    if (oldNovel) {
+      try {
+        const content = JSON.parse(oldNovel)
+        if (content && content !== '') {
+          migrated.push({ id: 'novel', name: '小说', content })
+        }
+      }
+      catch {
+        if (oldNovel && oldNovel !== '' && oldNovel !== 'null' && oldNovel !== 'undefined') {
+          migrated.push({ id: 'novel', name: '小说', content: oldNovel })
+        }
+      }
+    }
+
+    // 迁移自定义模式
+    if (oldCustom) {
+      try {
+        const content = JSON.parse(oldCustom)
+        if (content && content !== '') {
+          migrated.push({ id: 'custom', name: '自定义', content })
+        }
+      }
+      catch {
+        if (oldCustom && oldCustom !== '' && oldCustom !== 'null' && oldCustom !== 'undefined') {
+          migrated.push({ id: 'custom', name: '自定义', content: oldCustom })
+        }
+      }
+    }
+
+    // 如果迁移到了数据，使用迁移的数据；否则使用默认数据
+    if (migrated.length > 0) {
+      customPrompts.value = migrated
+      console.log('[Migration] Migrated prompts from old format')
+    }
+    else {
+      customPrompts.value = [...defaultPrompts]
+    }
+  }
+  catch (error) {
+    console.error('[Migration] Error migrating prompts:', error)
+    customPrompts.value = [...defaultPrompts]
+  }
+}
+
+// 初始化 Prompts
+function initializePrompts() {
+  if (customPrompts.value.length === 0) {
+    migratePrompts()
+  }
+}
+
+initializePrompts()
+
+// Prompt 管理函数
+export function addPrompt(name: string, content: string = '') {
+  const id = `prompt_${Date.now()}`
+  customPrompts.value.push({ id, name: name.trim(), content })
+}
+
+export function removePrompt(id: string) {
+  // 至少保留一个 Prompt
+  if (customPrompts.value.length <= 1) {
+    return false
+  }
+  const index = customPrompts.value.findIndex(p => p.id === id)
+  if (index !== -1) {
+    customPrompts.value.splice(index, 1)
+    return true
+  }
+  return false
+}
+
+export function updatePrompt(id: string, updates: Partial<CustomPrompt>) {
+  const index = customPrompts.value.findIndex(p => p.id === id)
+  if (index !== -1) {
+    customPrompts.value[index] = { ...customPrompts.value[index], ...updates }
+  }
+}
+
+export function resetPrompts() {
+  customPrompts.value = [...defaultPrompts]
+}
+
+export function getPromptById(id: string): CustomPrompt | undefined {
+  return customPrompts.value.find(p => p.id === id)
+}
 
 function normalizeApiUrl(url: string, defaultUrl: string): string {
   if (!url)

@@ -5,6 +5,12 @@ export interface ModelOption {
   provider: AIProvider
 }
 
+export interface CustomPrompt {
+  id: string
+  name: string
+  content: string
+}
+
 export interface GeminiConfig {
   apiUrl?: string
   apiKey?: string
@@ -22,7 +28,7 @@ export interface ChatGPTConfig {
 
 export interface FavoriteResult {
   model: string
-  mode: 'concise' | 'detailed' | 'novel' | 'custom'
+  mode: string
   imageHash: string
   mimeType: string
   time: number

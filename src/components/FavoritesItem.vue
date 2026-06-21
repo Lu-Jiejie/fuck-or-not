@@ -17,7 +17,7 @@ const shouldExpand = computed(() => {
   return expanded.value || !props.isMobile
 })
 
-const modeMap = {
+const modeMap: Record<string, string> = {
   concise: '简洁模式',
   detailed: '详细模式',
   novel: '小说模式',
