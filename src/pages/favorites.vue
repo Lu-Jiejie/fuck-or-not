@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import type { FavoriteResult, LegacyFavoriteResult } from '~/types'
+import type { FavoriteResult } from '~/types'
 import { useMediaQuery, useStorage } from '@vueuse/core'
 import { useIDBKeyval } from '@vueuse/integrations/useIDBKeyval'
 import { computed, nextTick, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import FavoritesItem from '~/components/FavoritesItem.vue'
 import Pagination from '~/components/Pagination.vue'
-import { computeImageHash, deleteImageIfUnused, imageStore } from '~/logic'
+import { deleteImageIfUnused, imageStore } from '~/logic'
 
+const router = useRouter()
 const isMobile = useMediaQuery('(max-width: 768px)')
 
 const favoriteResults = useIDBKeyval<FavoriteResult[] | undefined>('favorite-results', undefined)
@@ -80,89 +82,17 @@ function onDeleteAll() {
   page.value = 1
 }
 
-function onExportAll() {
-  if (!favoriteResults.data.value || favoriteResults.data.value.length === 0) {
-    return
-  }
-  if (!confirm('确定要导出所有收藏吗？')) {
-    return
-  }
-  const exportData = {
-    favorites: favoriteResults.data.value,
-    images: imageStore.data.value,
-  }
-  const data = JSON.stringify(exportData, null, 2)
-  const blob = new Blob([data], { type: 'application/json' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `favorites-${Date.now()}.json`
-  a.click()
-  URL.revokeObjectURL(url)
-}
-
-const fileInputRef = ref<HTMLInputElement | null>(null)
-
-function onImportClick() {
-  if (!confirm('确定要导入收藏吗？已存在的收藏不会被覆盖。')) {
-    return
-  }
-  fileInputRef.value?.click()
-}
-
-function onImportFile(event: Event) {
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (!file)
-    return
-
-  const reader = new FileReader()
-  reader.onload = async () => {
-    try {
-      const parsed = JSON.parse(reader.result as string)
-      // 新格式：{ favorites, images }；旧格式：直接是数组
-      const raw: (FavoriteResult | LegacyFavoriteResult)[] = Array.isArray(parsed)
-        ? parsed
-        : Array.isArray(parsed.favorites) ? parsed.favorites : null
-      if (!raw) {
-        alert('导入失败：文件格式不正确')
-        return
-      }
-      // 合并图片数据
-      if (parsed.images && typeof parsed.images === 'object') {
-        imageStore.data.value = { ...imageStore.data.value, ...parsed.images }
-      }
-      const existingTimes = new Set(favoriteResults.data.value?.map(item => item.time) ?? [])
-      const incoming = raw.filter(item => !existingTimes.has(item.time))
-      if (incoming.length === 0) {
-        alert('没有新的收藏可导入')
-        return
-      }
-      // 迁移旧格式
-      const migrated: FavoriteResult[] = []
-      const newImages: Record<string, string> = { ...imageStore.data.value }
-      for (const item of incoming) {
-        if ('image' in item) {
-          const hash = await computeImageHash(item.image)
-          newImages[hash] = item.image
-          newImages[`${hash}:mime`] = 'image/png'
-          migrated.push({ model: item.model, mode: item.mode, imageHash: hash, mimeType: 'image/png', time: item.time, result: item.result })
-        }
-        else {
-          migrated.push(item)
-        }
-      }
-      imageStore.data.value = newImages
-      favoriteResults.data.value = [...(favoriteResults.data.value ?? []), ...migrated]
-        .sort((a, b) => b.time - a.time)
-      alert(`成功导入 ${migrated.length} 条收藏`)
-    }
-    catch {
-      alert('导入失败：文件解析错误')
-    }
-  }
-  reader.readAsText(file)
-  input.value = ''
+function navigateToSettings() {
+  router.push('/settings')
+  // 等待路由跳转完成后滚动到页面底部
+  nextTick(() => {
+    setTimeout(() => {
+      window.scrollTo({
+        top: document.documentElement.scrollHeight,
+        behavior: 'smooth',
+      })
+    }, 100)
+  })
 }
 </script>
 
@@ -250,7 +180,7 @@ function onImportFile(event: Event) {
             flex="~ items-center gap-2" px-4 py-2 rounded-lg text-sm font-medium
             border="~ base" cursor-pointer transition-colors duration-200
             hover:bg-gray-100 dark:hover:bg-gray-900
-            @click="onImportClick"
+            @click="navigateToSettings"
           >
             <div i-carbon-upload />
             导入收藏
@@ -259,10 +189,10 @@ function onImportFile(event: Event) {
             flex="~ items-center gap-2" px-4 py-2 rounded-lg text-sm font-medium
             border="~ base" cursor-pointer transition-colors duration-200
             hover:bg-gray-100 dark:hover:bg-gray-900
-            @click="onExportAll"
+            @click="navigateToSettings"
           >
             <div i-carbon-download />
-            导出所有
+            导出收藏
           </button>
           <button
             flex="~ items-center gap-2" px-4 py-2 rounded-lg text-sm font-medium
@@ -274,14 +204,6 @@ function onImportFile(event: Event) {
             删除所有
           </button>
         </div>
-
-        <input
-          ref="fileInputRef"
-          type="file"
-          accept=".json"
-          hidden
-          @change="onImportFile"
-        >
       </template>
 
       <!-- empty -->
@@ -299,19 +221,12 @@ function onImportFile(event: Event) {
             flex="~ items-center gap-2" px-4 py-2 rounded-lg text-sm font-medium
             border="~ base" cursor-pointer transition-colors duration-200
             hover:bg-gray-100 dark:hover:bg-gray-900
-            @click="onImportClick"
+            @click="navigateToSettings"
           >
             <div i-carbon-upload />
             导入收藏
           </button>
         </div>
-        <input
-          ref="fileInputRef"
-          type="file"
-          accept=".json"
-          hidden
-          @change="onImportFile"
-        >
       </template>
     </div>
   </Transition>

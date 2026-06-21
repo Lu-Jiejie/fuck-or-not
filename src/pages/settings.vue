@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { AIProvider } from '~/types'
 import { useStorage } from '@vueuse/core'
+import { useIDBKeyval } from '@vueuse/integrations/useIDBKeyval'
+import JSZip from 'jszip'
 import Sortable from 'sortablejs'
 import { nextTick, onMounted, ref } from 'vue'
 import Input from '~/components/Input.vue'
@@ -15,6 +17,10 @@ const concisePrompt = useStorage('concise-prompt', '')
 const detailedPrompt = useStorage('detailed-prompt', '')
 const novelPrompt = useStorage('novel-prompt', '')
 const customPrompts = useStorage('custom-prompt', '')
+
+// 用于访问 IndexedDB 中的图片和收藏结果
+const imageStore = useIDBKeyval<Record<string, string>>('favorite-images', {})
+const favoriteResults = useIDBKeyval('favorite-results', [] as any[])
 
 const defaultPrompts = [
   defaultConcisePrompt,
@@ -150,33 +156,82 @@ onMounted(() => {
 
 const settingsFileInputRef = ref<HTMLInputElement | null>(null)
 
-function onExportSettings() {
+async function onExportSettings() {
   if (!confirm('确定要导出当前设置吗？')) {
     return
   }
-  const settings = {
-    googleApiKey: googleApiKey.value,
-    geminiApiUrl: geminiApiUrl.value,
-    grokApiKey: grokApiKey.value,
-    grokApiUrl: grokApiUrl.value,
-    chatgptApiKey: chatgptApiKey.value,
-    chatgptApiUrl: chatgptApiUrl.value,
-    geminiModels: geminiModels.value,
-    grokModels: grokModels.value,
-    chatgptModels: chatgptModels.value,
-    concisePrompt: concisePrompt.value,
-    detailedPrompt: detailedPrompt.value,
-    novelPrompt: novelPrompt.value,
-    customPrompts: customPrompts.value,
+
+  try {
+    // 创建 JSZip 实例
+    const zip = new JSZip()
+
+    // 准备配置数据
+    const settings = {
+      googleApiKey: googleApiKey.value,
+      geminiApiUrl: geminiApiUrl.value,
+      grokApiKey: grokApiKey.value,
+      grokApiUrl: grokApiUrl.value,
+      chatgptApiKey: chatgptApiKey.value,
+      chatgptApiUrl: chatgptApiUrl.value,
+      geminiModels: geminiModels.value,
+      grokModels: grokModels.value,
+      chatgptModels: chatgptModels.value,
+      concisePrompt: concisePrompt.value,
+      detailedPrompt: detailedPrompt.value,
+      novelPrompt: novelPrompt.value,
+      customPrompts: customPrompts.value,
+    }
+
+    // 添加配置文件
+    zip.file('settings.json', JSON.stringify(settings, null, 2))
+
+    // 添加收藏结果数据
+    if (favoriteResults.data.value && favoriteResults.data.value.length > 0) {
+      zip.file('favorites.json', JSON.stringify(favoriteResults.data.value, null, 2))
+    }
+
+    // 导出所有图片
+    const images = imageStore.data.value
+    if (images && Object.keys(images).length > 0) {
+      const imagesFolder = zip.folder('images')
+
+      for (const [key, value] of Object.entries(images)) {
+        // 跳过 mime type 条目
+        if (key.endsWith(':mime'))
+          continue
+
+        const base64Data = value
+        const mimeType = images[`${key}:mime`] || 'image/png'
+        const extension = mimeType.split('/')[1] || 'png'
+
+        // 将 base64 转换为 Blob
+        const byteCharacters = atob(base64Data)
+        const byteNumbers = Array.from({ length: byteCharacters.length })
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i)
+        }
+        const byteArray = new Uint8Array(byteNumbers)
+
+        // 添加图片文件到 zip
+        imagesFolder?.file(`${key}.${extension}`, byteArray)
+      }
+    }
+
+    // 生成 zip 文件
+    const blob = await zip.generateAsync({ type: 'blob' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `fuck-or-not-backup-${Date.now()}.zip`
+    a.click()
+    URL.revokeObjectURL(url)
+
+    alert('设置和图片已导出为 ZIP 文件')
   }
-  const data = JSON.stringify(settings, null, 2)
-  const blob = new Blob([data], { type: 'application/json' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `settings-${Date.now()}.json`
-  a.click()
-  URL.revokeObjectURL(url)
+  catch (error) {
+    console.error('[Export Error]', error)
+    alert(`导出失败：${(error as Error).message}`)
+  }
 }
 
 function onImportSettingsClick() {
@@ -186,83 +241,196 @@ function onImportSettingsClick() {
   settingsFileInputRef.value?.click()
 }
 
-function onImportSettingsFile(event: Event) {
+async function onImportSettingsFile(event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
   if (!file)
     return
 
-  const reader = new FileReader()
-  reader.onload = () => {
-    try {
-      const data = JSON.parse(reader.result as string)
-      if (typeof data !== 'object' || data === null) {
-        alert('导入失败：文件格式不正确')
-        return
+  try {
+    // 检查文件类型
+    if (file.name.endsWith('.zip')) {
+      // 处理 zip 文件
+      const zip = new JSZip()
+      const zipContent = await zip.loadAsync(file)
+
+      // 读取配置文件
+      const settingsFile = zipContent.file('settings.json')
+      if (settingsFile) {
+        const settingsText = await settingsFile.async('text')
+        const data = JSON.parse(settingsText)
+        await importSettings(data)
       }
-      if (data.googleApiKey !== undefined)
-        googleApiKey.value = data.googleApiKey
-      if (data.geminiApiUrl !== undefined)
-        geminiApiUrl.value = data.geminiApiUrl
-      if (data.grokApiKey !== undefined)
-        grokApiKey.value = data.grokApiKey
-      if (data.grokApiUrl !== undefined)
-        grokApiUrl.value = data.grokApiUrl
-      if (data.chatgptApiKey !== undefined)
-        chatgptApiKey.value = data.chatgptApiKey
-      if (data.chatgptApiUrl !== undefined)
-        chatgptApiUrl.value = data.chatgptApiUrl
 
-      // 兼容新格式：按提供商分组的模型列表
-      if (Array.isArray(data.geminiModels))
-        geminiModels.value = data.geminiModels
-      if (Array.isArray(data.grokModels))
-        grokModels.value = data.grokModels
-      if (Array.isArray(data.chatgptModels))
-        chatgptModels.value = data.chatgptModels
+      // 读取图片（必须在读取收藏结果之前）
+      const imagesFolder = zipContent.folder('images')
+      if (imagesFolder) {
+        const imageFiles = Object.keys(zipContent.files).filter(name => name.startsWith('images/') && !name.endsWith('/'))
+        const newImages: Record<string, string> = {}
 
-      // 兼容旧格式：统一的 modelOptions
-      if (Array.isArray(data.modelOptions) && data.modelOptions.length > 0) {
-        const gemini: string[] = []
-        const grok: string[] = []
-        const chatgpt: string[] = []
+        console.log('[Import] Found image files:', imageFiles)
 
-        for (const model of data.modelOptions) {
-          if (model.provider === 'Gemini') {
-            gemini.push(model.id)
-          }
-          else if (model.provider === 'Grok') {
-            grok.push(model.id)
-          }
-          else if (model.provider === 'ChatGPT') {
-            chatgpt.push(model.id)
+        for (const fileName of imageFiles) {
+          const file = zipContent.file(fileName)
+          if (file) {
+            // 提取文件名和扩展名
+            const baseName = fileName.split('/').pop() || ''
+            const dotIndex = baseName.lastIndexOf('.')
+            const nameWithoutExt = dotIndex > 0 ? baseName.substring(0, dotIndex) : baseName
+            const extension = dotIndex > 0 ? baseName.substring(dotIndex + 1) : 'png'
+
+            // 读取图片数据
+            const blob = await file.async('blob')
+            const base64 = await blobToBase64(blob)
+
+            // 存储图片和 mime type，使用原始哈希值作为键名
+            console.log('[Import] Importing image:', nameWithoutExt, `(${extension})`)
+            newImages[nameWithoutExt] = base64
+            newImages[`${nameWithoutExt}:mime`] = `image/${extension}`
           }
         }
 
-        if (gemini.length > 0)
-          geminiModels.value = gemini
-        if (grok.length > 0)
-          grokModels.value = grok
-        if (chatgpt.length > 0)
-          chatgptModels.value = chatgpt
+        console.log('[Import] Total images imported:', Object.keys(newImages).filter(k => !k.endsWith(':mime')).length)
+
+        // 合并到现有图片存储（不覆盖已存在的）
+        imageStore.data.value = { ...newImages, ...imageStore.data.value }
+
+        console.log('[Import] ImageStore keys after merge:', Object.keys(imageStore.data.value).filter(k => !k.endsWith(':mime')))
       }
 
-      if (data.concisePrompt !== undefined)
-        concisePrompt.value = data.concisePrompt
-      if (data.detailedPrompt !== undefined)
-        detailedPrompt.value = data.detailedPrompt
-      if (data.novelPrompt !== undefined)
-        novelPrompt.value = data.novelPrompt
-      if (data.customPrompts !== undefined)
-        customPrompts.value = data.customPrompts
-      alert('设置导入成功')
+      // 读取收藏结果（必须在图片导入之后）
+      const favoritesFile = zipContent.file('favorites.json')
+      if (favoritesFile) {
+        const favoritesText = await favoritesFile.async('text')
+        const favoritesData = JSON.parse(favoritesText)
+        if (Array.isArray(favoritesData)) {
+          console.log('[Import] Importing favorites, total:', favoritesData.length)
+
+          // 检查每个收藏记录的 imageHash
+          for (const fav of favoritesData) {
+            const hasImage = imageStore.data.value[fav.imageHash] !== undefined
+            console.log(`[Import] Favorite ${fav.time}: imageHash=${fav.imageHash}, hasImage=${hasImage}`)
+            if (!hasImage) {
+              console.warn('[Import] Missing image for hash:', fav.imageHash)
+            }
+          }
+
+          favoriteResults.data.value = favoritesData
+          console.log('[Import] Favorites imported successfully')
+        }
+      }
+
+      alert('设置和图片导入成功')
     }
-    catch {
-      alert('导入失败：文件解析错误')
+    else {
+      // 处理 JSON 文件（兼容旧格式）
+      const reader = new FileReader()
+      reader.onload = async () => {
+        try {
+          const data = JSON.parse(reader.result as string)
+          await importSettings(data)
+          alert('设置导入成功')
+        }
+        catch {
+          alert('导入失败：文件解析错误')
+        }
+      }
+      reader.readAsText(file)
     }
   }
-  reader.readAsText(file)
+  catch (error) {
+    console.error('[Import Error]', error)
+    alert(`导入失败：${(error as Error).message}`)
+  }
+
   input.value = ''
+
+  // 等待一下让 IndexedDB 完成写入，然后刷新页面以确保数据正确加载
+  setTimeout(() => {
+    window.location.reload()
+  }, 500)
+}
+
+// 辅助函数：将 Blob 转换为 base64
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        // 移除 data URL 前缀
+        const base64 = reader.result.split(',')[1]
+        resolve(base64)
+      }
+      else {
+        reject(new Error('Failed to read blob'))
+      }
+    }
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(blob)
+  })
+}
+
+// 导入设置的通用函数
+async function importSettings(data: any) {
+  if (typeof data !== 'object' || data === null) {
+    throw new Error('文件格式不正确')
+  }
+
+  if (data.googleApiKey !== undefined)
+    googleApiKey.value = data.googleApiKey
+  if (data.geminiApiUrl !== undefined)
+    geminiApiUrl.value = data.geminiApiUrl
+  if (data.grokApiKey !== undefined)
+    grokApiKey.value = data.grokApiKey
+  if (data.grokApiUrl !== undefined)
+    grokApiUrl.value = data.grokApiUrl
+  if (data.chatgptApiKey !== undefined)
+    chatgptApiKey.value = data.chatgptApiKey
+  if (data.chatgptApiUrl !== undefined)
+    chatgptApiUrl.value = data.chatgptApiUrl
+
+  // 兼容新格式：按提供商分组的模型列表
+  if (Array.isArray(data.geminiModels))
+    geminiModels.value = data.geminiModels
+  if (Array.isArray(data.grokModels))
+    grokModels.value = data.grokModels
+  if (Array.isArray(data.chatgptModels))
+    chatgptModels.value = data.chatgptModels
+
+  // 兼容旧格式：统一的 modelOptions
+  if (Array.isArray(data.modelOptions) && data.modelOptions.length > 0) {
+    const gemini: string[] = []
+    const grok: string[] = []
+    const chatgpt: string[] = []
+
+    for (const model of data.modelOptions) {
+      if (model.provider === 'Gemini') {
+        gemini.push(model.id)
+      }
+      else if (model.provider === 'Grok') {
+        grok.push(model.id)
+      }
+      else if (model.provider === 'ChatGPT') {
+        chatgpt.push(model.id)
+      }
+    }
+
+    if (gemini.length > 0)
+      geminiModels.value = gemini
+    if (grok.length > 0)
+      grokModels.value = grok
+    if (chatgpt.length > 0)
+      chatgptModels.value = chatgpt
+  }
+
+  if (data.concisePrompt !== undefined)
+    concisePrompt.value = data.concisePrompt
+  if (data.detailedPrompt !== undefined)
+    detailedPrompt.value = data.detailedPrompt
+  if (data.novelPrompt !== undefined)
+    novelPrompt.value = data.novelPrompt
+  if (data.customPrompts !== undefined)
+    customPrompts.value = data.customPrompts
 }
 
 function startAdding(provider: AIProvider) {
@@ -927,12 +1095,15 @@ function handleRemoveModel(provider: AIProvider, index: number) {
 
   <!-- 设置管理 -->
   <div mb-4 rounded-xl border="~ base" bg="white dark:black" p-6 text-left>
-    <div flex="~ items-center gap-2" mb-5>
+    <div flex="~ items-center gap-2" mb-2>
       <div w-1 h-6 rounded-full bg-gray-400 />
       <h2 text-lg font-semibold>
         设置管理
       </h2>
     </div>
+    <p text-sm op-50 mb-5>
+      包含所有配置、收藏和图片
+    </p>
 
     <div flex="~ gap-3 wrap">
       <button
@@ -958,7 +1129,7 @@ function handleRemoveModel(provider: AIProvider, index: number) {
     <input
       ref="settingsFileInputRef"
       type="file"
-      accept=".json"
+      accept=".json,.zip"
       hidden
       @change="onImportSettingsFile"
     >
