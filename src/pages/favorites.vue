@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { FavoriteResult } from '~/types'
-import { useMediaQuery, useStorage } from '@vueuse/core'
+import { useStorage } from '@vueuse/core'
 import { useIDBKeyval } from '@vueuse/integrations/useIDBKeyval'
 import { computed, nextTick, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -9,7 +9,8 @@ import Pagination from '~/components/Pagination.vue'
 import { deleteImageIfUnused, imageStore } from '~/logic'
 
 const router = useRouter()
-const isMobile = useMediaQuery('(max-width: 768px)')
+// const isMobile = useMediaQuery('(max-width: 768px)')
+const isMobile = true
 
 const favoriteResults = useIDBKeyval<FavoriteResult[] | undefined>('favorite-results', undefined)
 const sortOrder = useStorage<'newest' | 'oldest'>('favorites-sort-order', 'newest')

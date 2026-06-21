@@ -12,10 +12,18 @@ const props = defineProps<{
 
 const emit = defineEmits(['delete'])
 
-const expanded = ref(false)
-const shouldExpand = computed(() => {
-  return expanded.value || !props.isMobile
+const contentExpanded = ref(false)
+const showContent = computed(() => {
+  return contentExpanded.value || !props.isMobile
 })
+
+function toggleContent(expand: boolean) {
+  const currentScrollY = window.scrollY
+  contentExpanded.value = expand
+  requestAnimationFrame(() => {
+    window.scrollTo(0, currentScrollY)
+  })
+}
 
 const modeMap: Record<string, string> = {
   concise: '简洁模式',
@@ -84,24 +92,43 @@ function formatTime(ts: number) {
 
     <div
       border="~ base rounded"
-      bg="light dark:dark"
       text="left base"
       select-text w-full
-      :class="[
-        shouldExpand
-          ? 'px-4 py-3'
-          : 'bg-light-700 dark:bg-dark-700!',
-      ]"
+      overflow-hidden
     >
       <div
-        v-if="!shouldExpand"
-        i-carbon-overflow-menu-horizontal
-        m-auto w-full cursor-pointer py-4 opacity-60
-        @click="expanded = !expanded"
-      />
-      <Transition name="fade">
-        <MarkdownRenderer v-if="shouldExpand" :content="props.item.result" />
-      </Transition>
+        v-if="props.isMobile && !showContent"
+        flex items-center justify-center
+        cursor-pointer py-2
+        bg="light-700 dark:dark-700"
+        transition-colors duration-200
+        hover:opacity-80
+        select-none
+        @click="toggleContent(true)"
+      >
+        <div i-carbon-chevron-down w-5 h-5 opacity-60 />
+      </div>
+
+      <div
+        v-else
+        bg="light dark:dark"
+      >
+        <div
+          v-if="props.isMobile"
+          flex items-center justify-center
+          cursor-pointer py-2
+          border="b base"
+          transition-colors duration-200
+          hover:opacity-60
+          select-none
+          @click="toggleContent(false)"
+        >
+          <div i-carbon-chevron-up w-5 h-5 opacity-60 />
+        </div>
+        <div px-4 py-3>
+          <MarkdownRenderer :content="props.item.result" />
+        </div>
+      </div>
     </div>
   </div>
 </template>
