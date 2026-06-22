@@ -1,9 +1,6 @@
-import type { ContentListUnion } from '@google/genai'
 import type { AIProvider, CustomPrompt, ModelOption } from '~/types'
-import { GoogleGenAI, HarmBlockThreshold, HarmCategory } from '@google/genai'
 import { useDark, useStorage, useToggle } from '@vueuse/core'
 import { useIDBKeyval } from '@vueuse/integrations/useIDBKeyval'
-import { ref, watch } from 'vue'
 import { defaultConcisePrompt, defaultDetailedPrompt, defaultNovelPrompt } from './prompts'
 
 export const isDark = useDark()
@@ -184,30 +181,6 @@ function normalizeApiUrl(url: string, defaultUrl: string): string {
 
   return url
 }
-
-const geminiAI = ref<GoogleGenAI | null>(createGeminiClient())
-
-function createGeminiClient() {
-  if (!googleApiKey.value)
-    return null
-
-  const config: any = {
-    apiKey: googleApiKey.value,
-    fetch: (url: RequestInfo | URL, init?: RequestInit) => {
-      return fetch(url, { ...init, mode: 'cors' })
-    },
-  }
-
-  if (geminiApiUrl.value) {
-    config.baseUrl = geminiApiUrl.value
-  }
-
-  return new GoogleGenAI(config)
-}
-
-watch([googleApiKey, geminiApiUrl], () => {
-  geminiAI.value = createGeminiClient()
-})
 
 export const defaultGeminiModels: string[] = [
   'gemini-2.5-flash',
@@ -469,28 +442,70 @@ export async function fetchModelsFromAPI(provider: AIProvider): Promise<string[]
       }
 
       const baseUrl = geminiApiUrl.value || 'https://generativelanguage.googleapis.com'
-      const url = `${baseUrl}/v1beta/models?key=${apiKey}`
 
-      const response = await fetch(url, {
+      // 先尝试标准 Gemini API
+      try {
+        const url = `${baseUrl}/v1beta/models?key=${apiKey}`
+        console.log('[Gemini Models API] 尝试标准 Gemini API:', url)
+
+        const response = await fetch(url, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        })
+
+        if (response.ok) {
+          const data = await response.json()
+          console.log('[Gemini Models API] 返回数据:', data)
+
+          // 提取模型列表
+          let models = data.models || []
+
+          // 检查第一个模型是否有 supportedGenerationMethods 字段
+          if (models.length > 0 && models[0].supportedGenerationMethods) {
+            models = models.filter((model: any) =>
+              model.supportedGenerationMethods?.includes('generateContent'),
+            )
+          }
+
+          // 提取模型名称
+          const modelNames = models.map((model: any) => {
+            return model.name?.replace('models/', '') || model.name
+          })
+
+          console.log('[Gemini Models API] 过滤后的模型:', modelNames)
+          return modelNames
+        }
+      }
+      catch (error) {
+        console.warn('[Gemini Models API] 标准 API 失败，尝试 OpenAI 兼容格式:', error)
+      }
+
+      // 如果标准 API 失败，尝试 OpenAI 兼容格式
+      const openaiUrl = `${baseUrl}/v1/models`
+      console.log('[Gemini Models API] 尝试 OpenAI 兼容格式:', openaiUrl)
+
+      const response = await fetch(openaiUrl, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
         },
       })
 
       if (!response.ok) {
         const error = await response.text()
+        console.error('[Gemini Models API] 错误响应:', error)
         throw new Error(`Gemini API 错误 (${response.status}): ${error}`)
       }
 
       const data = await response.json()
+      console.log('[Gemini Models API] OpenAI 格式返回数据:', data)
 
-      // 过滤出支持 generateContent 的模型
-      const models = data.models
-        ?.filter((model: any) =>
-          model.supportedGenerationMethods?.includes('generateContent'),
-        )
-        ?.map((model: any) => model.name.replace('models/', '')) || []
+      // OpenAI 格式：{ data: [{ id: 'model-name', ... }] }
+      const models = data.data?.map((model: any) => model.id) || []
+      console.log('[Gemini Models API] 提取的模型:', models)
 
       return models
     }
@@ -564,29 +579,249 @@ export async function fetchModelsFromAPI(provider: AIProvider): Promise<string[]
   }
 }
 
-export async function generateContent(model: string, contents: ContentListUnion, systemInstruction: string, provider: AIProvider) {
+export async function generateContent(model: string, contents: any, systemInstruction: string, provider: AIProvider) {
   if (provider === 'Gemini') {
-    const baseUrl = geminiApiUrl.value || 'https://generativelanguage.googleapis.com'
-    console.log('[Gemini Request]', { model, baseUrl })
-    try {
-      return await geminiAI.value!.models.generateContent({
-        model,
-        contents,
-        config: {
-          systemInstruction,
-          safetySettings: [
-            { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-            { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
-            { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
-            { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-            { category: HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY, threshold: HarmBlockThreshold.BLOCK_NONE },
-          ],
-        },
-      })
+    const apiKey = googleApiKey.value
+    if (!apiKey) {
+      throw new Error('Gemini API key not set')
     }
-    catch (error) {
-      console.error('[Gemini Error]', { model, baseUrl, error })
-      throw error
+
+    const baseUrl = geminiApiUrl.value || 'https://generativelanguage.googleapis.com'
+
+    // 判断是否为标准 Gemini API（包含 generativelanguage.googleapis.com）
+    const isStandardGemini = baseUrl.includes('generativelanguage.googleapis.com') || baseUrl.includes('gemini')
+
+    if (isStandardGemini) {
+      // 使用标准 Gemini API 格式
+      const apiUrl = `${baseUrl}/v1beta/models/${model}:generateContent?key=${apiKey}`
+      console.log('[Gemini Request] 使用标准 Gemini API:', { model, apiUrl })
+
+      // 构建请求体
+      const requestBody: any = {
+        contents: Array.isArray(contents)
+          ? contents.map((content: any) => {
+              if (typeof content === 'string') {
+                return {
+                  role: 'user',
+                  parts: [{ text: content }],
+                }
+              }
+              else if ('text' in content && content.text) {
+                return {
+                  role: 'user',
+                  parts: [{ text: content.text }],
+                }
+              }
+              else if ('inlineData' in content && content.inlineData) {
+                return {
+                  role: 'user',
+                  parts: [{
+                    inlineData: {
+                      mimeType: content.inlineData.mimeType,
+                      data: content.inlineData.data,
+                    },
+                  }],
+                }
+              }
+              return content
+            })
+          : [contents],
+        generationConfig: {
+          temperature: 0.7,
+        },
+        safetySettings: [
+          { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+          { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+          { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+          { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
+          { category: 'HARM_CATEGORY_CIVIC_INTEGRITY', threshold: 'BLOCK_NONE' },
+        ],
+      }
+
+      if (systemInstruction) {
+        requestBody.systemInstruction = {
+          parts: [{ text: systemInstruction }],
+        }
+      }
+
+      try {
+        const response = await fetch(apiUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(requestBody),
+        })
+
+        if (!response.ok) {
+          const error = await response.text()
+          console.error('[Gemini Error]', { status: response.status, statusText: response.statusText, error })
+          throw new Error(`Gemini API error (${response.status}): ${error}`)
+        }
+
+        const data = await response.json()
+        console.log('[Gemini Response]', data)
+
+        // 提取文本内容
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text || ''
+        const finishReason = data.candidates?.[0]?.finishReason || 'STOP'
+
+        return {
+          text,
+          candidates: [{
+            finishReason,
+          }],
+        }
+      }
+      catch (error) {
+        console.error('[Gemini Error]', { model, apiUrl, error })
+        throw error
+      }
+    }
+    else {
+      // 使用 OpenAI 兼容格式
+      const apiUrl = normalizeApiUrl(baseUrl, `${baseUrl}/v1/chat/completions`)
+      console.log('[Gemini Request] 使用 OpenAI 兼容格式:', { model, apiUrl })
+
+      const messages: any[] = []
+
+      if (systemInstruction) {
+        messages.push({
+          role: 'system',
+          content: systemInstruction,
+        })
+      }
+
+      // 转换 contents 为 messages
+      for (const content of Array.isArray(contents) ? contents : [contents]) {
+        if (typeof content === 'string') {
+          messages.push({
+            role: 'user',
+            content,
+          })
+        }
+        else if ('text' in content && content.text) {
+          messages.push({
+            role: 'user',
+            content: content.text,
+          })
+        }
+        else if ('inlineData' in content && content.inlineData) {
+          // 处理图片数据
+          messages.push({
+            role: 'user',
+            content: [
+              {
+                type: 'image_url',
+                image_url: {
+                  url: `data:${content.inlineData.mimeType};base64,${content.inlineData.data}`,
+                },
+              },
+            ],
+          })
+        }
+        else if ('role' in content && 'parts' in content) {
+          // 已经是 Gemini 格式的 content，需要转换
+          const parts = content.parts || []
+          for (const part of parts) {
+            if (part.text) {
+              messages.push({
+                role: 'user',
+                content: part.text,
+              })
+            }
+            else if (part.inlineData) {
+              messages.push({
+                role: 'user',
+                content: [
+                  {
+                    type: 'image_url',
+                    image_url: {
+                      url: `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`,
+                    },
+                  },
+                ],
+              })
+            }
+            else if (part.fileData) {
+              // fileData 格式暂不支持 OpenAI 格式，跳过
+              console.warn('[Gemini] fileData 不支持 OpenAI 兼容格式')
+            }
+          }
+        }
+      }
+
+      // 合并连续的用户消息
+      const mergedMessages: any[] = []
+      for (const msg of messages) {
+        if (msg.role === 'system') {
+          mergedMessages.push(msg)
+          continue
+        }
+
+        const lastMsg = mergedMessages[mergedMessages.length - 1]
+        if (lastMsg && lastMsg.role === 'user') {
+          // 合并到前一个用户消息
+          if (Array.isArray(lastMsg.content) && Array.isArray(msg.content)) {
+            lastMsg.content.push(...msg.content)
+          }
+          else if (Array.isArray(lastMsg.content) && typeof msg.content === 'string') {
+            lastMsg.content.push({ type: 'text', text: msg.content })
+          }
+          else if (typeof lastMsg.content === 'string' && Array.isArray(msg.content)) {
+            lastMsg.content = [{ type: 'text', text: lastMsg.content }, ...msg.content]
+          }
+          else if (typeof lastMsg.content === 'string' && typeof msg.content === 'string') {
+            lastMsg.content = `${lastMsg.content}\n${msg.content}`
+          }
+          else {
+            mergedMessages.push(msg)
+          }
+        }
+        else {
+          mergedMessages.push(msg)
+        }
+      }
+
+      const requestBody = {
+        model,
+        messages: mergedMessages,
+        temperature: 0.7,
+      }
+
+      console.log('[Gemini OpenAI Format] 请求体:', JSON.stringify(requestBody, null, 2))
+
+      try {
+        const response = await fetch(apiUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify(requestBody),
+        })
+
+        if (!response.ok) {
+          const error = await response.text()
+          console.error('[Gemini OpenAI Format Error]', { status: response.status, statusText: response.statusText, error })
+          throw new Error(`Gemini API error (${response.status}): ${error}`)
+        }
+
+        const data = await response.json()
+        console.log('[Gemini OpenAI Format Response]', data)
+
+        // 转换为统一格式
+        return {
+          text: data.choices?.[0]?.message?.content || '',
+          candidates: [{
+            finishReason: data.choices?.[0]?.finish_reason === 'content_filter' ? 'PROHIBITED_CONTENT' : 'STOP',
+          }],
+        }
+      }
+      catch (error) {
+        console.error('[Gemini OpenAI Format Error]', { model, apiUrl, error })
+        throw error
+      }
     }
   }
   else if (provider === 'Grok') {
@@ -856,13 +1091,53 @@ export async function generateContent(model: string, contents: ContentListUnion,
   throw new Error(`Unsupported provider: ${provider}`)
 }
 
-export function uploadFileToAPI(file: File) {
-  return geminiAI.value!.files.upload({
-    file,
-    config: {
+export async function uploadFileToAPI(file: File) {
+  const apiKey = googleApiKey.value
+  if (!apiKey) {
+    throw new Error('Gemini API key not set')
+  }
+
+  const baseUrl = geminiApiUrl.value || 'https://generativelanguage.googleapis.com'
+  const apiUrl = `${baseUrl}/upload/v1beta/files?key=${apiKey}`
+
+  const formData = new FormData()
+  formData.append('file', file)
+
+  const metadataHeaders = {
+    file: JSON.stringify({
       mimeType: file.type,
-    },
-  })
+    }),
+  }
+
+  try {
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'X-Goog-Upload-Protocol': 'multipart',
+        ...metadataHeaders,
+      },
+      body: formData,
+    })
+
+    if (!response.ok) {
+      const error = await response.text()
+      console.error('[Gemini File Upload Error]', error)
+      throw new Error(`Gemini file upload error (${response.status}): ${error}`)
+    }
+
+    const data = await response.json()
+    console.log('[Gemini File Upload Response]', data)
+
+    return {
+      uri: data.file?.uri || data.uri,
+      mimeType: data.file?.mimeType || data.mimeType || file.type,
+      name: data.file?.name || data.name,
+    }
+  }
+  catch (error) {
+    console.error('[Gemini File Upload Error]', error)
+    throw error
+  }
 }
 
 export function fileToBase64(file: File): Promise<string> {

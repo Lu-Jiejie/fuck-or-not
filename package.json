@@ -16,7 +16,6 @@
     "release": "bumpp"
   },
   "dependencies": {
-    "@google/genai": "^2.8.0",
     "@vueuse/core": "^14.3.0",
     "@vueuse/integrations": "^14.3.0",
     "idb-keyval": "^6.2.5",

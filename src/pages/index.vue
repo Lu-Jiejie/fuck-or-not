@@ -14,9 +14,7 @@ const {
   selectedProvider,
   selectedModelId,
   selectedPromptId,
-  selectedModel,
   additionalPrompt,
-  uploadType,
   result,
   errorMsg,
   analyseButtonLoading,
@@ -25,7 +23,6 @@ const {
   providerSelectOptions,
   modelSelectOptions,
   promptSelectOptions,
-  analyseMethodOptions,
   handleAnalyseButtonClick,
   handleSaveButtonClick,
 } = useAnalyse()
@@ -59,11 +56,8 @@ const {
 
   <!-- 上传区 -->
   <div mb-4 rounded-xl border="~ base" bg="white dark:black" p-6 text-left>
-    <div :class="selectedModel?.provider === 'Gemini' ? 'mb-4' : ''">
-      <span label ml-0.5>上传图片</span>
-      <ImageUploader v-model="image" />
-    </div>
-    <Select v-if="selectedModel?.provider === 'Gemini'" v-model="uploadType" :options="analyseMethodOptions" />
+    <span label ml-0.5>上传图片</span>
+    <ImageUploader v-model="image" />
   </div>
 
   <!-- 额外提示词 -->

@@ -1,12 +1,8 @@
 import type { AIProvider, FavoriteResult, ModelOption } from '~/types'
-import {
-  createPartFromUri,
-  createUserContent,
-} from '@google/genai'
 import { useStorage } from '@vueuse/core'
 import { useIDBKeyval } from '@vueuse/integrations/useIDBKeyval'
 import { computed, ref, watch } from 'vue'
-import { chatgptApiKey, customPrompts, fileToBase64, generateContent, getPromptById, getProviderModels, googleApiKey, grokApiKey, modelOptions, saveImage, uploadFileToAPI } from '~/logic'
+import { chatgptApiKey, customPrompts, fileToBase64, generateContent, getPromptById, getProviderModels, googleApiKey, grokApiKey, modelOptions, saveImage } from '~/logic'
 
 export function useAnalyse() {
   const image = ref<File | null>(null)
@@ -16,7 +12,6 @@ export function useAnalyse() {
   const selectedModelId = useStorage('selected-model', 'gemini-2.5-flash')
   const selectedPromptId = useStorage('selected-prompt-id', 'novel')
   const additionalPrompt = ref('')
-  const uploadType = useStorage<'base64' | 'api'>('upload-type', 'base64')
   const result = ref('')
   const errorMsg = ref('')
   const analyseButtonLoading = ref(false)
@@ -85,11 +80,6 @@ export function useAnalyse() {
     }))
   })
 
-  const analyseMethodOptions = [
-    { label: '直接传递图片', value: 'base64' },
-    { label: '使用 FileAPI 上传图片（适合大于20MB的图片）', value: 'api' },
-  ]
-
   async function handleAnalyseButtonClick() {
     if (!selectedModel.value) {
       errorMsg.value = '请先选择模型。'
@@ -115,13 +105,8 @@ export function useAnalyse() {
       errorMsg.value = '请先上传图片。'
       return
     }
-    if (image.value.size > 20 * 1024 * 1024 && uploadType.value === 'base64') {
-      errorMsg.value = '图片大于 20MB，请选择"使用 FileAPI 上传图片"。'
-      return
-    }
-
-    if ((currentProvider === 'Grok' || currentProvider === 'ChatGPT') && uploadType.value === 'api') {
-      errorMsg.value = `${currentProvider} 模型暂不支持 FileAPI 上传，请选择"直接传递图片"。`
+    if (image.value.size > 20 * 1024 * 1024) {
+      errorMsg.value = '图片大小不能超过 20MB，请选择较小的图片。'
       return
     }
 
@@ -133,8 +118,6 @@ export function useAnalyse() {
     analyseButtonLoading.value = true
 
     try {
-      let response
-      let lastImage
       let finalPrompt = selectedPrompt.value.content || '分析这张图片'
 
       // 如果有额外的提示词，添加到最终 Prompt 中
@@ -142,42 +125,25 @@ export function useAnalyse() {
         finalPrompt = `${finalPrompt}\n\n用户补充说明：${additionalPrompt.value.trim()}`
       }
 
-      if (uploadType.value === 'api' && currentProvider === 'Gemini') {
-        const uploadedFile = await uploadFileToAPI(image.value)
-        const contents = createUserContent([
-          createPartFromUri(uploadedFile.uri!, uploadedFile.mimeType!),
-          finalPrompt,
-        ])
-        response = await generateContent(
-          selectedModel.value.id,
-          contents,
-          finalPrompt,
-          currentProvider,
-        )
-        base64Image.value = await fileToBase64(image.value!)
-        lastImage = base64Image.value
-      }
-      else {
-        base64Image.value = await fileToBase64(image.value!)
-        const contents: Parameters<typeof generateContent>[1] = [
-          {
-            inlineData: {
-              data: base64Image.value,
-              mimeType: image.value!.type,
-            },
+      base64Image.value = await fileToBase64(image.value!)
+      const contents: Parameters<typeof generateContent>[1] = [
+        {
+          inlineData: {
+            data: base64Image.value,
+            mimeType: image.value!.type,
           },
-          {
-            text: finalPrompt,
-          },
-        ]
-        response = await generateContent(
-          selectedModel.value.id,
-          contents,
-          finalPrompt,
-          currentProvider,
-        )
-        lastImage = base64Image.value
-      }
+        },
+        {
+          text: finalPrompt,
+        },
+      ]
+      const response = await generateContent(
+        selectedModel.value.id,
+        contents,
+        finalPrompt,
+        currentProvider,
+      )
+      const lastImage = base64Image.value
 
       console.log(response)
       if (response.text === '' || response.text === null || response.text === undefined) {
@@ -208,7 +174,6 @@ export function useAnalyse() {
       console.error('[Analysis Error]', {
         provider: currentProvider,
         model: selectedModel.value.id,
-        uploadType: uploadType.value,
         error,
       })
       errorMsg.value = `Error: ${(error as Error).message || String(error)}`
@@ -243,7 +208,6 @@ export function useAnalyse() {
     selectedModel,
     selectedPrompt,
     additionalPrompt,
-    uploadType,
     result,
     errorMsg,
     analyseButtonLoading,
@@ -252,7 +216,6 @@ export function useAnalyse() {
     providerSelectOptions,
     modelSelectOptions,
     promptSelectOptions,
-    analyseMethodOptions,
     handleAnalyseButtonClick,
     handleSaveButtonClick,
   }
