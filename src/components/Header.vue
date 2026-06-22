@@ -1,33 +1,30 @@
 <script setup lang="ts">
-import { useRouter } from 'vue-router'
 import { toggleDark } from '~/logic'
-
-const router = useRouter()
 </script>
 
 <template>
   <header w-full flex items-center justify-end p-8>
     <nav text-xl inline-flex gap-4>
-      <button
+      <router-link
+        to="/"
         icon-btn title="Home"
-        @click="router.push('/')"
       >
         <div i-carbon-home />
-      </button>
+      </router-link>
 
-      <button
+      <router-link
+        to="/favorites"
         icon-btn title="Favorites"
-        @click="router.push('/favorites')"
       >
         <div i-carbon-bookmark />
-      </button>
+      </router-link>
 
-      <button
+      <router-link
+        to="/settings"
         icon-btn title="Settings"
-        @click="router.push('/settings')"
       >
         <div i-carbon-settings />
-      </button>
+      </router-link>
 
       <a
         i-carbon-logo-github icon-btn
