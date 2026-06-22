@@ -459,6 +459,111 @@ export function getProviderModels(provider: AIProvider): string[] {
   }
 }
 
+// 从 API 获取模型列表
+export async function fetchModelsFromAPI(provider: AIProvider): Promise<string[]> {
+  try {
+    if (provider === 'Gemini') {
+      const apiKey = googleApiKey.value
+      if (!apiKey) {
+        throw new Error('请先配置 Gemini API 密钥')
+      }
+
+      const baseUrl = geminiApiUrl.value || 'https://generativelanguage.googleapis.com'
+      const url = `${baseUrl}/v1beta/models?key=${apiKey}`
+
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+
+      if (!response.ok) {
+        const error = await response.text()
+        throw new Error(`Gemini API 错误 (${response.status}): ${error}`)
+      }
+
+      const data = await response.json()
+
+      // 过滤出支持 generateContent 的模型
+      const models = data.models
+        ?.filter((model: any) =>
+          model.supportedGenerationMethods?.includes('generateContent'),
+        )
+        ?.map((model: any) => model.name.replace('models/', '')) || []
+
+      return models
+    }
+    else if (provider === 'Grok') {
+      const apiKey = grokApiKey.value
+      if (!apiKey) {
+        throw new Error('请先配置 Grok API 密钥')
+      }
+
+      const baseUrl = grokApiUrl.value || 'https://api.x.ai'
+      const url = `${baseUrl}/v1/models`
+
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+      })
+
+      if (!response.ok) {
+        const error = await response.text()
+        throw new Error(`Grok API 错误 (${response.status}): ${error}`)
+      }
+
+      const data = await response.json()
+      const models = data.data?.map((model: any) => model.id) || []
+
+      return models
+    }
+    else if (provider === 'ChatGPT') {
+      const apiKey = chatgptApiKey.value
+      if (!apiKey) {
+        throw new Error('请先配置 ChatGPT API 密钥')
+      }
+
+      const baseUrl = chatgptApiUrl.value || 'https://api.openai.com'
+      const url = `${baseUrl}/v1/models`
+
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+      })
+
+      if (!response.ok) {
+        const error = await response.text()
+        throw new Error(`ChatGPT API 错误 (${response.status}): ${error}`)
+      }
+
+      const data = await response.json()
+      // 过滤出 GPT 模型
+      const models = data.data
+        ?.filter((model: any) =>
+          model.id.startsWith('gpt-')
+          || model.id.startsWith('o1-')
+          || model.id.startsWith('chatgpt-'),
+        )
+        ?.map((model: any) => model.id) || []
+
+      return models
+    }
+
+    throw new Error(`不支持的提供商: ${provider}`)
+  }
+  catch (error) {
+    console.error(`[${provider}] 获取模型列表失败:`, error)
+    throw error
+  }
+}
+
 export async function generateContent(model: string, contents: ContentListUnion, systemInstruction: string, provider: AIProvider) {
   if (provider === 'Gemini') {
     const baseUrl = geminiApiUrl.value || 'https://generativelanguage.googleapis.com'

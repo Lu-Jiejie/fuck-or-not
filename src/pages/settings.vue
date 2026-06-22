@@ -8,7 +8,7 @@ import { nextTick, onMounted, ref } from 'vue'
 import Input from '~/components/Input.vue'
 import Textarea from '~/components/Textarea.vue'
 import { webdavAction, webdavDownload, webdavPassword, webdavProgress, webdavStatus, webdavSyncing, webdavUpload, webdavUrl, webdavUsername } from '~/composables/useWebDAV'
-import { addPrompt, addProviderModel, chatgptApiKey, chatgptApiUrl, chatgptModels, customPrompts, geminiApiUrl, geminiModels, grokApiKey, grokApiUrl, grokModels, removePrompt, removeProviderModel, resetPrompts, resetProviderModels, updatePrompt, updateProviderModel } from '~/logic'
+import { addPrompt, addProviderModel, chatgptApiKey, chatgptApiUrl, chatgptModels, customPrompts, fetchModelsFromAPI, geminiApiUrl, geminiModels, grokApiKey, grokApiUrl, grokModels, removePrompt, removeProviderModel, resetPrompts, resetProviderModels, updatePrompt, updateProviderModel } from '~/logic'
 
 const googleApiKey = useStorage('google-api-key', '')
 
@@ -126,6 +126,23 @@ const newModelId = ref('')
 const newModelProvider = ref<AIProvider>('Gemini')
 const editingInputRef = ref<HTMLInputElement[]>([])
 const addingInputRef = ref<HTMLInputElement | null>(null)
+
+// 获取模型列表相关状态
+const fetchingModels = ref<Record<AIProvider, boolean>>({
+  Gemini: false,
+  Grok: false,
+  ChatGPT: false,
+})
+const availableModels = ref<Record<AIProvider, string[]>>({
+  Gemini: [],
+  Grok: [],
+  ChatGPT: [],
+})
+const selectedModelToAdd = ref<Record<AIProvider, string>>({
+  Gemini: '',
+  Grok: '',
+  ChatGPT: '',
+})
 
 function startEditingProvider(provider: AIProvider, index: number, modelId: string) {
   cancelAdding()
@@ -483,6 +500,66 @@ function handleRemoveModel(provider: AIProvider, index: number) {
     removeProviderModel(provider, index)
   }
 }
+
+// 从 API 获取模型列表
+async function handleFetchModels(provider: AIProvider) {
+  try {
+    fetchingModels.value[provider] = true
+    const models = await fetchModelsFromAPI(provider)
+
+    if (models.length === 0) {
+      alert(`未找到可用的模型`)
+      return
+    }
+
+    // 过滤掉已经添加的模型
+    const currentModels = getProviderModels(provider)
+    const newModels = models.filter(m => !currentModels.includes(m))
+
+    availableModels.value[provider] = newModels
+    selectedModelToAdd.value[provider] = ''
+
+    if (newModels.length === 0) {
+      alert('所有模型都已添加到列表中')
+    }
+  }
+  catch (error) {
+    console.error('[Fetch Models Error]', error)
+    alert(`获取模型列表失败：${(error as Error).message}`)
+  }
+  finally {
+    fetchingModels.value[provider] = false
+  }
+}
+
+// 从下拉列表添加选中的模型
+function handleAddSelectedModel(provider: AIProvider) {
+  const selectedModel = selectedModelToAdd.value[provider]
+  if (!selectedModel) {
+    alert('请先选择一个模型')
+    return
+  }
+
+  addProviderModel(provider, selectedModel)
+
+  // 从可用列表中移除已添加的模型
+  availableModels.value[provider] = availableModels.value[provider].filter(m => m !== selectedModel)
+  selectedModelToAdd.value[provider] = ''
+}
+
+// 导入 getProviderModels 以便在上面的函数中使用
+function getProviderModels(provider: AIProvider): string[] {
+  switch (provider) {
+    case 'Gemini':
+      return geminiModels.value
+    case 'Grok':
+      return grokModels.value
+    case 'ChatGPT':
+      return chatgptModels.value
+    default:
+      return []
+  }
+}
 </script>
 
 <template>
@@ -531,13 +608,60 @@ function handleRemoveModel(provider: AIProvider, index: number) {
     <div>
       <div flex="~ items-center justify-between" mb-3>
         <span label ml-0.5>模型列表</span>
-        <button
-          text-sm op-60 hover:op-100 underline cursor-pointer transition-opacity
-          @click="handleResetModels('Gemini')"
+        <div flex="~ gap-2">
+          <button
+            text-sm op-60 hover:op-100 underline cursor-pointer transition-opacity
+            :disabled="fetchingModels.Gemini"
+            @click="handleFetchModels('Gemini')"
+          >
+            <span v-if="fetchingModels.Gemini">获取中...</span>
+            <span v-else>从 API 获取</span>
+          </button>
+          <button
+            text-sm op-60 hover:op-100 underline cursor-pointer transition-opacity
+            @click="handleResetModels('Gemini')"
+          >
+            重置为默认
+          </button>
+        </div>
+      </div>
+
+      <!-- 从 API 获取的模型选择器 -->
+      <div v-if="availableModels.Gemini.length > 0" mb-3 flex="~ gap-2">
+        <select
+          v-model="selectedModelToAdd.Gemini"
+          font-mono text-sm flex-1
+          p="x-4 y-2"
+          bg="transparent"
+          border="~ rounded base hover-base focus-base"
+          outline="none active:none"
+          cursor-pointer
+          class="select-with-arrow"
         >
-          重置为默认
+          <option value="" disabled bg-base>
+            选择要添加的模型 (共 {{ availableModels.Gemini.length }} 个)
+          </option>
+          <option
+            v-for="model in availableModels.Gemini"
+            :key="model"
+            :value="model"
+            bg-base
+          >
+            {{ model }}
+          </option>
+        </select>
+        <button
+          p-2 rounded-lg cursor-pointer transition-colors duration-200
+          class="bg-teal-600 hover:bg-teal-700 text-white h-10 w-10"
+          flex items-center justify-center flex-shrink-0
+          :disabled="!selectedModelToAdd.Gemini"
+          :class="{ 'op-50 cursor-not-allowed': !selectedModelToAdd.Gemini }"
+          @click="handleAddSelectedModel('Gemini')"
+        >
+          <div i-carbon-add text-xl />
         </button>
       </div>
+
       <div rounded-lg border="~ base" overflow-hidden>
         <div
           v-for="(modelId, index) in geminiModels"
@@ -649,7 +773,7 @@ function handleRemoveModel(provider: AIProvider, index: number) {
               @click="startAdding('Gemini')"
             >
               <div i-carbon-add />
-              添加模型
+              手动添加模型
             </button>
           </template>
         </div>
@@ -693,13 +817,60 @@ function handleRemoveModel(provider: AIProvider, index: number) {
     <div>
       <div flex="~ items-center justify-between" mb-3>
         <span label ml-0.5>模型列表</span>
-        <button
-          text-sm op-60 hover:op-100 underline cursor-pointer transition-opacity
-          @click="handleResetModels('Grok')"
+        <div flex="~ gap-2">
+          <button
+            text-sm op-60 hover:op-100 underline cursor-pointer transition-opacity
+            :disabled="fetchingModels.Grok"
+            @click="handleFetchModels('Grok')"
+          >
+            <span v-if="fetchingModels.Grok">获取中...</span>
+            <span v-else>从 API 获取</span>
+          </button>
+          <button
+            text-sm op-60 hover:op-100 underline cursor-pointer transition-opacity
+            @click="handleResetModels('Grok')"
+          >
+            重置为默认
+          </button>
+        </div>
+      </div>
+
+      <!-- 从 API 获取的模型选择器 -->
+      <div v-if="availableModels.Grok.length > 0" mb-3 flex="~ gap-2">
+        <select
+          v-model="selectedModelToAdd.Grok"
+          font-mono text-sm flex-1
+          p="x-4 y-2"
+          bg="transparent"
+          border="~ rounded base hover-base focus-base"
+          outline="none active:none"
+          cursor-pointer
+          class="select-with-arrow"
         >
-          重置为默认
+          <option value="" disabled bg-base>
+            选择要添加的模型 (共 {{ availableModels.Grok.length }} 个)
+          </option>
+          <option
+            v-for="model in availableModels.Grok"
+            :key="model"
+            :value="model"
+            bg-base
+          >
+            {{ model }}
+          </option>
+        </select>
+        <button
+          p-2 rounded-lg cursor-pointer transition-colors duration-200
+          class="bg-purple-600 hover:bg-purple-700 text-white h-10 w-10"
+          flex items-center justify-center flex-shrink-0
+          :disabled="!selectedModelToAdd.Grok"
+          :class="{ 'op-50 cursor-not-allowed': !selectedModelToAdd.Grok }"
+          @click="handleAddSelectedModel('Grok')"
+        >
+          <div i-carbon-add text-xl />
         </button>
       </div>
+
       <div rounded-lg border="~ base" overflow-hidden>
         <div
           v-for="(modelId, index) in grokModels"
@@ -811,7 +982,7 @@ function handleRemoveModel(provider: AIProvider, index: number) {
               @click="startAdding('Grok')"
             >
               <div i-carbon-add />
-              添加模型
+              手动添加模型
             </button>
           </template>
         </div>
@@ -855,13 +1026,60 @@ function handleRemoveModel(provider: AIProvider, index: number) {
     <div>
       <div flex="~ items-center justify-between" mb-3>
         <span label ml-0.5>模型列表</span>
-        <button
-          text-sm op-60 hover:op-100 underline cursor-pointer transition-opacity
-          @click="handleResetModels('ChatGPT')"
+        <div flex="~ gap-2">
+          <button
+            text-sm op-60 hover:op-100 underline cursor-pointer transition-opacity
+            :disabled="fetchingModels.ChatGPT"
+            @click="handleFetchModels('ChatGPT')"
+          >
+            <span v-if="fetchingModels.ChatGPT">获取中...</span>
+            <span v-else>从 API 获取</span>
+          </button>
+          <button
+            text-sm op-60 hover:op-100 underline cursor-pointer transition-opacity
+            @click="handleResetModels('ChatGPT')"
+          >
+            重置为默认
+          </button>
+        </div>
+      </div>
+
+      <!-- 从 API 获取的模型选择器 -->
+      <div v-if="availableModels.ChatGPT.length > 0" mb-3 flex="~ gap-2">
+        <select
+          v-model="selectedModelToAdd.ChatGPT"
+          font-mono text-sm flex-1
+          p="x-4 y-2"
+          bg="transparent"
+          border="~ rounded base hover-base focus-base"
+          outline="none active:none"
+          cursor-pointer
+          class="select-with-arrow"
         >
-          重置为默认
+          <option value="" disabled bg-base>
+            选择要添加的模型 (共 {{ availableModels.ChatGPT.length }} 个)
+          </option>
+          <option
+            v-for="model in availableModels.ChatGPT"
+            :key="model"
+            :value="model"
+            bg-base
+          >
+            {{ model }}
+          </option>
+        </select>
+        <button
+          p-2 rounded-lg cursor-pointer transition-colors duration-200
+          class="bg-green-600 hover:bg-green-700 text-white h-10 w-10"
+          flex items-center justify-center flex-shrink-0
+          :disabled="!selectedModelToAdd.ChatGPT"
+          :class="{ 'op-50 cursor-not-allowed': !selectedModelToAdd.ChatGPT }"
+          @click="handleAddSelectedModel('ChatGPT')"
+        >
+          <div i-carbon-add text-xl />
         </button>
       </div>
+
       <div rounded-lg border="~ base" overflow-hidden>
         <div
           v-for="(modelId, index) in chatgptModels"
@@ -973,7 +1191,7 @@ function handleRemoveModel(provider: AIProvider, index: number) {
               @click="startAdding('ChatGPT')"
             >
               <div i-carbon-add />
-              添加模型
+              手动添加模型
             </button>
           </template>
         </div>
@@ -1254,5 +1472,13 @@ function handleRemoveModel(provider: AIProvider, index: number) {
 .sortable-ghost {
   opacity: 0.4;
   background: var(--c-bg);
+}
+
+.select-with-arrow {
+  appearance: none;
+  background-image: url('data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"%3E%3Cpath fill="%23aaa" d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z"/%3E%3C/svg%3E');
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 20px;
 }
 </style>
