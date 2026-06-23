@@ -2,10 +2,10 @@
 import type { FavoriteResult } from '~/types'
 import { useStorage } from '@vueuse/core'
 import { useIDBKeyval } from '@vueuse/integrations/useIDBKeyval'
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import FavoritesItem from '~/components/FavoritesItem.vue'
-import Pagination from '~/components/Pagination.vue'
+import FavoritesToolbar from '~/components/FavoritesToolbar.vue'
 import { deleteImageIfUnused, imageStore } from '~/logic'
 
 const router = useRouter()
@@ -28,18 +28,22 @@ const sortedResults = computed(() => {
   return sorted
 })
 
-const pageSize = 5
+const pageSize = useStorage('favorites-page-size', 5)
 const page = ref(1)
-const paginationRef = ref<InstanceType<typeof Pagination> | null>(null)
-const jumpInput = ref('')
 
-const pageCount = computed(() => Math.max(1, Math.ceil((favoriteResults.data.value?.length ?? 0) / pageSize)))
+const pageCount = computed(() => Math.max(1, Math.ceil((favoriteResults.data.value?.length ?? 0) / pageSize.value)))
+
+// 每页条数变化时，确保当前页不越界
+watch(pageSize, () => {
+  if (page.value > pageCount.value)
+    page.value = pageCount.value
+})
 
 const pagedResults = computed(() => {
   if (!sortedResults.value.length)
     return []
-  const start = (page.value - 1) * pageSize
-  return sortedResults.value.slice(start, start + pageSize)
+  const start = (page.value - 1) * pageSize.value
+  return sortedResults.value.slice(start, start + pageSize.value)
 })
 
 function onDelete(time: number) {
@@ -67,18 +71,6 @@ function onUpdate(time: number, result: string) {
   if (idx !== -1) {
     favoriteResults.data.value![idx].result = result
   }
-}
-
-function toggleSortOrder() {
-  sortOrder.value = sortOrder.value === 'newest' ? 'oldest' : 'newest'
-}
-
-function handleJump() {
-  const p = Number.parseInt(jumpInput.value, 10)
-  if (!Number.isNaN(p) && p >= 1 && p <= pageCount.value) {
-    page.value = p
-  }
-  jumpInput.value = ''
 }
 
 function onDeleteAll() {
@@ -132,41 +124,14 @@ function navigateToSettings() {
 
       <!-- has data -->
       <template v-else-if="favoriteResults.data.value.length > 0">
-        <!-- 工具栏 -->
-        <div
-          mb-4 rounded-xl border="~ base" bg="white dark:black" px-4 py-3
-          flex="~ items-center justify-between gap-2 wrap"
-        >
-          <div flex="~ items-center gap-3">
-            <Pagination
-              ref="paginationRef"
-              v-model="page"
-              :page-size="pageSize"
-              :total="favoriteResults.data.value.length"
-            />
-            <div v-if="pageCount > 5" flex items-center gap-1 text-sm>
-              <input
-                v-model="jumpInput"
-                type="text"
-                inputmode="numeric"
-                :placeholder="String(page)"
-                class="w-10 px-1 py-0.5 text-center rounded outline-none transition-colors duration-200 border border-base bg-transparent focus:border-teal-600"
-                @keyup.enter="handleJump"
-              >
-              <span opacity-60>/ {{ pageCount }}</span>
-            </div>
-          </div>
-          <button
-            type="button"
-            flex items-center gap-1.5 px-3 py-1.5
-            border="~ base rounded-lg"
-            text-sm cursor-pointer
-            hover:border-teal-600 transition-colors duration-200
-            @click="toggleSortOrder"
-          >
-            <div :class="sortOrder === 'newest' ? 'i-carbon-arrow-down' : 'i-carbon-arrow-up'" />
-            {{ sortOrder === 'newest' ? '最新优先' : '最旧优先' }}
-          </button>
+        <!-- 顶部工具栏 -->
+        <div mb-4>
+          <FavoritesToolbar
+            v-model:page="page"
+            v-model:page-size="pageSize"
+            v-model:sort-order="sortOrder"
+            :total="favoriteResults.data.value.length"
+          />
         </div>
 
         <TransitionGroup name="list" tag="div">
@@ -179,6 +144,16 @@ function navigateToSettings() {
             @update="(result: string) => onUpdate(item.time, result)"
           />
         </TransitionGroup>
+
+        <!-- 底部工具栏 -->
+        <div mt-4 mb-2>
+          <FavoritesToolbar
+            v-model:page="page"
+            v-model:page-size="pageSize"
+            v-model:sort-order="sortOrder"
+            :total="favoriteResults.data.value.length"
+          />
+        </div>
 
         <!-- 底部操作 -->
         <div
