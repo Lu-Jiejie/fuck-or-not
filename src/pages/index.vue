@@ -23,9 +23,22 @@ const {
   providerSelectOptions,
   modelSelectOptions,
   promptSelectOptions,
+  additionalPromptPresets,
+  selectedAdditionalPresetId,
+  handleSelectPreset,
+  handleDeletePreset,
+  handleSaveAsPreset,
   handleAnalyseButtonClick,
   handleSaveButtonClick,
+  isEditingResult,
+  editedResultText,
+  handleStartEditResult,
+  handleConfirmEditResult,
+  handleCancelEditResult,
+  handleFillTestResult,
 } = useAnalyse()
+
+const isDev = import.meta.env.DEV
 </script>
 
 <template>
@@ -62,7 +75,39 @@ const {
 
   <!-- 额外提示词 -->
   <div mb-4 rounded-xl border="~ base" bg="white dark:black" p-6 text-left>
-    <span label ml-0.5>额外提示词（可选）</span>
+    <span label block mb-3>额外提示词（可选）</span>
+
+    <!-- 标签栏 -->
+    <div v-if="additionalPromptPresets.length > 0" flex="~ wrap" gap-2 mb-3>
+      <span
+        v-for="preset in additionalPromptPresets"
+        :key="preset.id"
+        flex="~ items-center"
+      >
+        <button
+          flex="~ items-center" px-3 py-1.5 rounded-l-lg
+          text-xs border="~ base r-transparent" transition-colors duration-200
+          :class="selectedAdditionalPresetId === preset.id
+            ? 'bg-teal-500/10 border-teal-500 text-teal-700 dark:text-teal-300'
+            : 'bg-transparent hover:border-teal-400'"
+          :title="preset.content"
+          @click="handleSelectPreset(preset.id)"
+        >
+          <span max-w-32 truncate>{{ preset.name }}</span>
+        </button>
+        <button
+          flex="~ items-center justify-center" px-1.5 py-1.5 rounded-r-lg
+          text-xs border="~ l-transparent base"
+          bg-transparent
+          op-40 hover="op-100"
+          transition-colors duration-200
+          :title="`删除「${preset.name}」`"
+          @click="handleDeletePreset(preset.id)"
+        >×</button>
+      </span>
+    </div>
+
+    <!-- textarea -->
     <textarea
       v-model="additionalPrompt"
       placeholder="描述图片细节或补充说明，帮助 AI 更好地理解和分析......"
@@ -73,7 +118,21 @@ const {
       outline="none"
       resize-y
       transition-colors duration-200
+      mb-2
     />
+
+    <!-- 保存按钮 -->
+    <div flex justify-end mt-1>
+      <button
+        v-if="additionalPrompt.trim()"
+        text-xs text-gray-100 font-bold rounded-md px-4 py-2
+        bg-teal-600 hover:bg-teal-700
+        cursor-pointer transition-colors duration-200
+        @click="handleSaveAsPreset"
+      >
+        保存为预设
+      </button>
+    </div>
   </div>
 
   <!-- 分析按钮 -->
@@ -84,6 +143,18 @@ const {
   >
     分析
   </Button>
+
+  <!-- 测试按钮（仅 dev 模式显示） -->
+  <div v-if="isDev" flex justify-end mt-2>
+    <button
+      text-xs rounded-md px-3 py-1.5 border="~ dashed base"
+      op-60 hover="op-100 border-teal-500 text-teal-600"
+      transition-colors duration-200 cursor-pointer
+      @click="handleFillTestResult"
+    >
+      填充测试结果
+    </button>
+  </div>
 
   <!-- 结果区 -->
   <template v-if="result !== '' || errorMsg !== ''">
@@ -105,11 +176,55 @@ const {
         {{ errorMsg }}
       </div>
 
-      <div
-        v-if="result !== ''"
-        select-text
-      >
-        <MarkdownRenderer :content="result" />
+      <div v-if="result !== ''">
+        <!-- 编辑/取消/保存按钮 -->
+        <div flex="~ justify-end gap-2" mb-2>
+          <template v-if="isEditingResult">
+            <button
+              text-xs text-gray-100 font-bold rounded-md px-4 py-2
+              bg-teal-600 hover:bg-teal-700
+              cursor-pointer transition-colors duration-200
+              @click="handleConfirmEditResult"
+            >
+              确认编辑
+            </button>
+            <button
+              text-xs text-gray-100 font-bold rounded-md px-4 py-2
+              bg-red-400 hover:bg-red-500
+              cursor-pointer transition-colors duration-200
+              @click="handleCancelEditResult"
+            >
+              取消
+            </button>
+          </template>
+          <button
+            v-else
+            text-xs text-gray-100 font-bold rounded-md px-4 py-2
+            bg-teal-600 hover:bg-teal-700
+            cursor-pointer transition-colors duration-200
+            @click="handleStartEditResult"
+          >
+            编辑结果
+          </button>
+        </div>
+
+        <textarea
+          v-if="isEditingResult"
+          v-model="editedResultText"
+          rows="12"
+          w-full px-3 py-2 rounded-lg
+          border="~ base focus:teal-600"
+          bg="transparent"
+          outline="none"
+          resize-y
+          transition-colors duration-200
+        />
+        <div
+          v-else
+          select-text
+        >
+          <MarkdownRenderer :content="result" />
+        </div>
       </div>
     </div>
 

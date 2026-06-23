@@ -170,6 +170,30 @@ export function getPromptById(id: string): CustomPrompt | undefined {
   return customPrompts.value.find(p => p.id === id)
 }
 
+// 额外提示词预设
+export const additionalPromptPresets = useStorage<CustomPrompt[]>('additional-prompt-presets', [])
+
+export function truncateText(text: string, maxLen = 30): string {
+  return text.length > maxLen ? `${text.slice(0, maxLen)}...` : text
+}
+
+export function addAdditionalPreset(name: string, content: string): string {
+  const id = `ap_${Date.now()}`
+  additionalPromptPresets.value.push({
+    id,
+    name: name.trim(),
+    content: content.trim(),
+  })
+  return id
+}
+
+export function removeAdditionalPreset(id: string) {
+  const idx = additionalPromptPresets.value.findIndex(p => p.id === id)
+  if (idx !== -1) {
+    additionalPromptPresets.value.splice(idx, 1)
+  }
+}
+
 function normalizeApiUrl(url: string, defaultUrl: string): string {
   if (!url)
     return defaultUrl

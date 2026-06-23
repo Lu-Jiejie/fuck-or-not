@@ -2,7 +2,7 @@
 import type { FavoriteResult } from '~/types'
 import { computed, ref } from 'vue'
 import MarkdownRenderer from '~/components/MarkdownRenderer.vue'
-import { getImageByHash } from '~/logic'
+import { getImageByHash, getPromptById } from '~/logic'
 
 const props = defineProps<{
   item: FavoriteResult
@@ -25,12 +25,19 @@ function toggleContent(expand: boolean) {
   })
 }
 
-const modeMap: Record<string, string> = {
+const legacyModeMap: Record<string, string> = {
   concise: '简洁模式',
   detailed: '详细模式',
   novel: '小说模式',
   custom: '自定义模式',
 }
+
+const modeLabel = computed(() => {
+  const prompt = getPromptById(props.item.mode)
+  if (prompt)
+    return prompt.name
+  return legacyModeMap[props.item.mode] ?? props.item.mode
+})
 
 const imageData = computed(() => getImageByHash(props.item.imageHash))
 const imageSrc = computed(() => {
@@ -44,6 +51,35 @@ function formatTime(ts: number) {
   const d = new Date(ts)
   return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()} ${d.getHours()}:${d.getMinutes().toString().padStart(2, '0')}`
 }
+
+type CopyKey = 'result' | 'prompt' | 'additionalPrompt'
+const copiedKey = ref<CopyKey | null>(null)
+let copiedTimer: ReturnType<typeof setTimeout> | null = null
+
+async function copyText(key: CopyKey, text: string) {
+  if (!text)
+    return
+  try {
+    await navigator.clipboard.writeText(text)
+  }
+  catch {
+    // 降级方案：clipboard API 不可用时使用 textarea
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.style.position = 'fixed'
+    ta.style.opacity = '0'
+    document.body.appendChild(ta)
+    ta.select()
+    document.execCommand('copy')
+    document.body.removeChild(ta)
+  }
+  copiedKey.value = key
+  if (copiedTimer)
+    clearTimeout(copiedTimer)
+  copiedTimer = setTimeout(() => {
+    copiedKey.value = null
+  }, 1500)
+}
 </script>
 
 <template>
@@ -53,24 +89,61 @@ function formatTime(ts: number) {
     bg="light/80 dark:dark/80"
     flex flex-col gap-3 items-stretch
   >
-    <div flex="~ row" items-center justify-between>
+    <div flex="~ col gap-3">
       <div text="sm" opacity-80>
         <span font-bold>{{ props.item.model }}</span>
         <span mx-2>·</span>
-        <span capitalize>{{ modeMap[props.item.mode] }}</span>
+        <span capitalize>{{ modeLabel }}</span>
         <span mx-2>·</span>
         <span text-xs>{{ formatTime(props.item.time) }}</span>
       </div>
 
-      <div flex gap-2>
+      <div flex="~ wrap gap-2">
         <button
-          type="button" title="Delete this item"
-          p-1 rounded text-white
-          bg="red-400 hover:red-500"
-          transition-colors duration-200 cursor-pointer
+          type="button" title="复制结果"
+          flex="~ items-center gap-1" px-2.5 py-1 rounded-md text-xs
+          border="~ base" cursor-pointer transition-colors duration-200
+          hover="border-teal-500 text-teal-600"
+          @click="copyText('result', props.item.result)"
+        >
+          <div :class="copiedKey === 'result' ? 'i-carbon-checkmark text-teal-500' : 'i-carbon-copy'" />
+          {{ copiedKey === 'result' ? '已复制' : '复制结果' }}
+        </button>
+        <button
+          type="button" title="复制 Prompt"
+          flex="~ items-center gap-1" px-2.5 py-1 rounded-md text-xs
+          border="~ base" transition-colors duration-200
+          :class="props.item.prompt
+            ? 'cursor-pointer hover:border-teal-500 hover:text-teal-600'
+            : 'op-30 cursor-not-allowed'"
+          :disabled="!props.item.prompt"
+          @click="copyText('prompt', props.item.prompt ?? '')"
+        >
+          <div :class="copiedKey === 'prompt' ? 'i-carbon-checkmark text-teal-500' : 'i-carbon-document'" />
+          {{ copiedKey === 'prompt' ? '已复制' : '复制 Prompt' }}
+        </button>
+        <button
+          type="button" title="复制额外提示词"
+          flex="~ items-center gap-1" px-2.5 py-1 rounded-md text-xs
+          border="~ base" transition-colors duration-200
+          :class="props.item.additionalPrompt
+            ? 'cursor-pointer hover:border-teal-500 hover:text-teal-600'
+            : 'op-30 cursor-not-allowed'"
+          :disabled="!props.item.additionalPrompt"
+          @click="copyText('additionalPrompt', props.item.additionalPrompt ?? '')"
+        >
+          <div :class="copiedKey === 'additionalPrompt' ? 'i-carbon-checkmark text-teal-500' : 'i-carbon-add-comment'" />
+          {{ copiedKey === 'additionalPrompt' ? '已复制' : '复制额外提示词' }}
+        </button>
+        <button
+          type="button" title="删除此项"
+          flex="~ items-center gap-1" px-2.5 py-1 rounded-md text-xs ml-auto
+          border="~ base" cursor-pointer transition-colors duration-200
+          hover="border-red-400 text-red-500"
           @click="emit('delete')"
         >
           <div i-carbon-trash-can />
+          删除
         </button>
       </div>
     </div>

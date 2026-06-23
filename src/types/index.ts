@@ -33,6 +33,8 @@ export interface FavoriteResult {
   mimeType: string
   time: number
   result: string
+  prompt?: string
+  additionalPrompt?: string
 }
 
 // 旧版数据结构，用于迁移兼容
