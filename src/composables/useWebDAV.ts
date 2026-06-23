@@ -4,7 +4,7 @@ import { useStorage } from '@vueuse/core'
 import { useIDBKeyval } from '@vueuse/integrations/useIDBKeyval'
 import { ref } from 'vue'
 
-import { chatgptApiKey, chatgptApiUrl, geminiApiUrl, grokApiKey, grokApiUrl, imageStore, modelOptions } from '~/logic'
+import { additionalPromptPresets, chatgptApiKey, chatgptApiUrl, chatgptModels, geminiApiUrl, geminiModels, grokApiKey, grokApiUrl, grokModels, imageStore, modelOptions } from '~/logic'
 
 export const webdavUrl = useStorage('webdav-url', '')
 export const webdavUsername = useStorage('webdav-username', '')
@@ -95,11 +95,14 @@ function buildSettings() {
     grokApiUrl: grokApiUrl.value,
     chatgptApiKey: chatgptApiKey.value,
     chatgptApiUrl: chatgptApiUrl.value,
-    modelOptions: modelOptions.value,
+    geminiModels: geminiModels.value,
+    grokModels: grokModels.value,
+    chatgptModels: chatgptModels.value,
     concisePrompt: concisePrompt.value,
     detailedPrompt: detailedPrompt.value,
     novelPrompt: novelPrompt.value,
     customPrompts: customPrompts.value,
+    additionalPromptPresets: additionalPromptPresets.value,
   }
 }
 
@@ -116,8 +119,39 @@ function applySettings(data: any) {
     chatgptApiKey.value = data.chatgptApiKey
   if (data.chatgptApiUrl !== undefined)
     chatgptApiUrl.value = data.chatgptApiUrl
-  if (Array.isArray(data.modelOptions))
+
+  // 模型列表：优先使用新版分组格式
+  if (Array.isArray(data.geminiModels) && data.geminiModels.length > 0)
+    geminiModels.value = data.geminiModels
+  if (Array.isArray(data.grokModels) && data.grokModels.length > 0)
+    grokModels.value = data.grokModels
+  if (Array.isArray(data.chatgptModels) && data.chatgptModels.length > 0)
+    chatgptModels.value = data.chatgptModels
+
+  // 兼容旧版：如果云端只有统一的 modelOptions，则按 provider 拆分
+  if (Array.isArray(data.modelOptions) && data.modelOptions.length > 0) {
+    if (geminiModels.value.length === 0 && grokModels.value.length === 0 && chatgptModels.value.length === 0) {
+      const gemini: string[] = []
+      const grok: string[] = []
+      const chatgpt: string[] = []
+      for (const model of data.modelOptions) {
+        if (model.provider === 'Gemini')
+          gemini.push(model.id)
+        else if (model.provider === 'Grok')
+          grok.push(model.id)
+        else if (model.provider === 'ChatGPT')
+          chatgpt.push(model.id)
+      }
+      if (gemini.length > 0)
+        geminiModels.value = gemini
+      if (grok.length > 0)
+        grokModels.value = grok
+      if (chatgpt.length > 0)
+        chatgptModels.value = chatgpt
+    }
     modelOptions.value = data.modelOptions
+  }
+
   if (data.concisePrompt !== undefined)
     concisePrompt.value = data.concisePrompt
   if (data.detailedPrompt !== undefined)
@@ -126,6 +160,8 @@ function applySettings(data: any) {
     novelPrompt.value = data.novelPrompt
   if (data.customPrompts !== undefined)
     customPrompts.value = data.customPrompts
+  if (Array.isArray(data.additionalPromptPresets))
+    additionalPromptPresets.value = data.additionalPromptPresets
 }
 
 export async function webdavUpload() {
@@ -151,34 +187,50 @@ export async function webdavUpload() {
     // 找出本地有但远端没有的图片
     const store = imageStore.data.value
     const localHashes = Object.keys(store).filter(k => !k.includes(':'))
-    const toUpload = localHashes.filter(h => !remoteHashes.has(h))
 
     // 上传缺失图片
     let uploaded = 0
-    for (const hash of toUpload) {
-      const base64 = store[hash]
+    let skipped = 0
+
+    for (const hash of localHashes) {
       const mimeType = store[`${hash}:mime`] ?? 'image/png'
       const ext = mimeToExt(mimeType)
-      setProgress(`上传图片...`, ++uploaded, toUpload.length)
-      // 将 base64 转为 Blob 上传，使浏览器能直接查看
-      const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0))
-      const blob = new Blob([bytes], { type: mimeType })
-      const res = await webdavRequest(`${DIR_IMAGES}/${hash}.${ext}`, 'PUT', blob, mimeType)
-      if (!res.ok)
-        throw new Error(`上传图片 ${hash} 失败: ${res.status} ${res.statusText}`)
-      remoteHashes.add(hash)
+      const path = `${DIR_IMAGES}/${hash}.${ext}`
+
+      // 优化逻辑：如果索引里没有，先 HEAD 探测一下文件是否已存在
+      if (!remoteHashes.has(hash)) {
+        const headRes = await webdavRequest(path, 'HEAD')
+        if (headRes.ok) {
+          // 云端确实存在，直接加入索引并跳过上传
+          remoteHashes.add(hash)
+          skipped++
+          continue
+        }
+
+        // 真正执行上传
+        setProgress(`上传图片...`, ++uploaded, localHashes.length - skipped)
+        const base64 = store[hash]
+        const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0))
+        const blob = new Blob([bytes], { type: mimeType })
+
+        const res = await webdavRequest(path, 'PUT', blob, mimeType)
+        if (!res.ok)
+          throw new Error(`上传图片 ${hash} 失败: ${res.status} ${res.statusText}`)
+
+        remoteHashes.add(hash)
+      }
     }
 
     // 更新远端图片索引
     setProgress('更新图片索引...')
     await webdavPut(`${DIR}/image-index.json`, JSON.stringify([...remoteHashes]))
 
-    // 上传收藏列表（含 imageHash + mimeType，不含 base64）
+    // 上传收藏列表
     setProgress('上传收藏列表...')
     const allItems = favoriteResults.data.value ?? []
     await webdavPut(`${DIR}/favorites.json`, JSON.stringify(allItems, null, 2))
 
-    webdavStatus.value = `上传成功（新增图片 ${toUpload.length} 张）`
+    webdavStatus.value = `上传成功（新增 ${uploaded} 张，跳过已存在 ${skipped} 张）`
     setProgress('')
   }
   catch (e: any) {
