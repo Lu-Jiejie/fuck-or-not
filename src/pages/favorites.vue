@@ -62,6 +62,13 @@ function onDelete(time: number) {
   })
 }
 
+function onUpdate(time: number, result: string) {
+  const idx = favoriteResults.data.value?.findIndex(item => item.time === time) ?? -1
+  if (idx !== -1) {
+    favoriteResults.data.value![idx].result = result
+  }
+}
+
 function toggleSortOrder() {
   sortOrder.value = sortOrder.value === 'newest' ? 'oldest' : 'newest'
 }
@@ -169,6 +176,7 @@ function navigateToSettings() {
             :item="item"
             :is-mobile="isMobile"
             @delete="onDelete(item.time)"
+            @update="(result: string) => onUpdate(item.time, result)"
           />
         </TransitionGroup>
 

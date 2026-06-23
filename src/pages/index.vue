@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+import { onBeforeRouteLeave } from 'vue-router'
 import Button from '~/components/Button.vue'
 import ImageUploader from '~/components/ImageUploader.vue'
 import MarkdownRenderer from '~/components/MarkdownRenderer.vue'
@@ -39,6 +41,20 @@ const {
 } = useAnalyse()
 
 const isDev = import.meta.env.DEV
+
+// 正在生成 或 已有结果但未保存 时，离开路由需确认
+const hasUnsavedWork = computed(() =>
+  analyseButtonLoading.value || (result.value !== '' && !saveButtonDisabled.value),
+)
+
+onBeforeRouteLeave(() => {
+  if (!hasUnsavedWork.value)
+    return true
+  const message = analyseButtonLoading.value
+    ? '正在生成结果，离开页面将中断本次分析，确定要离开吗？'
+    : '当前结果尚未保存，离开页面后将丢失，确定要离开吗？'
+  return window.confirm(message)
+})
 </script>
 
 <template>
@@ -125,7 +141,7 @@ const isDev = import.meta.env.DEV
     <div flex justify-end mt-1>
       <button
         v-if="additionalPrompt.trim()"
-        text-xs text-gray-100 font-bold rounded-md px-4 py-2
+        text-xs text-white font-bold rounded-md px-4 py-2
         bg-teal-600 hover:bg-teal-700
         cursor-pointer transition-colors duration-200
         @click="handleSaveAsPreset"
@@ -159,12 +175,45 @@ const isDev = import.meta.env.DEV
   <!-- 结果区 -->
   <template v-if="result !== '' || errorMsg !== ''">
     <div mt-4 rounded-xl border="~ base" bg="white dark:black" p-6 text-left>
-      <div flex="~ items-center gap-2" mb-4>
-        <div
-          w-1 h-6 rounded-full
-          :class="errorMsg !== '' ? 'bg-red-500' : 'bg-teal-500'"
-        />
-        <span text-lg font-semibold>分析结果</span>
+      <div flex="~ items-center justify-between gap-2" mb-4>
+        <div flex="~ items-center gap-2">
+          <div
+            w-1 h-6 rounded-full
+            :class="errorMsg !== '' ? 'bg-red-500' : 'bg-teal-500'"
+          />
+          <span text-lg font-semibold>分析结果</span>
+        </div>
+
+        <!-- 编辑/确认/取消按钮 -->
+        <div v-if="result !== ''" flex="~ gap-2">
+          <template v-if="isEditingResult">
+            <button
+              text-xs text-white font-bold rounded-md px-4 py-2
+              bg-teal-600 hover:bg-teal-700
+              cursor-pointer transition-colors duration-200
+              @click="handleConfirmEditResult"
+            >
+              确认编辑
+            </button>
+            <button
+              text-xs text-white font-bold rounded-md px-4 py-2
+              bg-red-400 hover:bg-red-500
+              cursor-pointer transition-colors duration-200
+              @click="handleCancelEditResult"
+            >
+              取消
+            </button>
+          </template>
+          <button
+            v-else
+            text-xs text-white font-bold rounded-md px-4 py-2
+            bg-teal-600 hover:bg-teal-700
+            cursor-pointer transition-colors duration-200
+            @click="handleStartEditResult"
+          >
+            编辑结果
+          </button>
+        </div>
       </div>
 
       <div
@@ -177,37 +226,6 @@ const isDev = import.meta.env.DEV
       </div>
 
       <div v-if="result !== ''">
-        <!-- 编辑/取消/保存按钮 -->
-        <div flex="~ justify-end gap-2" mb-2>
-          <template v-if="isEditingResult">
-            <button
-              text-xs text-gray-100 font-bold rounded-md px-4 py-2
-              bg-teal-600 hover:bg-teal-700
-              cursor-pointer transition-colors duration-200
-              @click="handleConfirmEditResult"
-            >
-              确认编辑
-            </button>
-            <button
-              text-xs text-gray-100 font-bold rounded-md px-4 py-2
-              bg-red-400 hover:bg-red-500
-              cursor-pointer transition-colors duration-200
-              @click="handleCancelEditResult"
-            >
-              取消
-            </button>
-          </template>
-          <button
-            v-else
-            text-xs text-gray-100 font-bold rounded-md px-4 py-2
-            bg-teal-600 hover:bg-teal-700
-            cursor-pointer transition-colors duration-200
-            @click="handleStartEditResult"
-          >
-            编辑结果
-          </button>
-        </div>
-
         <textarea
           v-if="isEditingResult"
           v-model="editedResultText"

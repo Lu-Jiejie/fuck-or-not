@@ -10,7 +10,10 @@ const props = defineProps<{
   isMobile: boolean
 }>()
 
-const emit = defineEmits(['delete'])
+const emit = defineEmits<{
+  delete: []
+  update: [result: string]
+}>()
 
 const contentExpanded = ref(false)
 const showContent = computed(() => {
@@ -56,6 +59,26 @@ type CopyKey = 'result' | 'prompt' | 'additionalPrompt'
 const copiedKey = ref<CopyKey | null>(null)
 let copiedTimer: ReturnType<typeof setTimeout> | null = null
 
+// 结果编辑
+const isEditing = ref(false)
+const editedText = ref('')
+
+function startEdit() {
+  editedText.value = props.item.result
+  isEditing.value = true
+  if (props.isMobile)
+    contentExpanded.value = true
+}
+
+function confirmEdit() {
+  emit('update', editedText.value)
+  isEditing.value = false
+}
+
+function cancelEdit() {
+  isEditing.value = false
+}
+
 async function copyText(key: CopyKey, text: string) {
   if (!text)
     return
@@ -90,61 +113,79 @@ async function copyText(key: CopyKey, text: string) {
     flex flex-col gap-3 items-stretch
   >
     <div flex="~ col gap-3">
-      <div text="sm" opacity-80>
-        <span font-bold>{{ props.item.model }}</span>
-        <span mx-2>·</span>
-        <span capitalize>{{ modeLabel }}</span>
-        <span mx-2>·</span>
-        <span text-xs>{{ formatTime(props.item.time) }}</span>
+      <div flex="~ items-center gap-2" text-sm opacity-80>
+        <span font-bold truncate min-w-0>{{ props.item.model }}</span>
+        <span flex-shrink-0 op-50>·</span>
+        <span capitalize truncate min-w-0>{{ modeLabel }}</span>
+        <span flex-shrink-0 op-50>·</span>
+        <span text-xs flex-shrink-0>{{ formatTime(props.item.time) }}</span>
       </div>
 
-      <div flex="~ wrap gap-2">
-        <button
-          type="button" title="复制结果"
-          flex="~ items-center gap-1" px-2.5 py-1 rounded-md text-xs
-          border="~ base" cursor-pointer transition-colors duration-200
-          hover="border-teal-500 text-teal-600"
-          @click="copyText('result', props.item.result)"
-        >
-          <div :class="copiedKey === 'result' ? 'i-carbon-checkmark text-teal-500' : 'i-carbon-copy'" />
-          {{ copiedKey === 'result' ? '已复制' : '复制结果' }}
-        </button>
-        <button
-          type="button" title="复制 Prompt"
-          flex="~ items-center gap-1" px-2.5 py-1 rounded-md text-xs
-          border="~ base" transition-colors duration-200
-          :class="props.item.prompt
-            ? 'cursor-pointer hover:border-teal-500 hover:text-teal-600'
-            : 'op-30 cursor-not-allowed'"
-          :disabled="!props.item.prompt"
-          @click="copyText('prompt', props.item.prompt ?? '')"
-        >
-          <div :class="copiedKey === 'prompt' ? 'i-carbon-checkmark text-teal-500' : 'i-carbon-document'" />
-          {{ copiedKey === 'prompt' ? '已复制' : '复制 Prompt' }}
-        </button>
-        <button
-          type="button" title="复制额外提示词"
-          flex="~ items-center gap-1" px-2.5 py-1 rounded-md text-xs
-          border="~ base" transition-colors duration-200
-          :class="props.item.additionalPrompt
-            ? 'cursor-pointer hover:border-teal-500 hover:text-teal-600'
-            : 'op-30 cursor-not-allowed'"
-          :disabled="!props.item.additionalPrompt"
-          @click="copyText('additionalPrompt', props.item.additionalPrompt ?? '')"
-        >
-          <div :class="copiedKey === 'additionalPrompt' ? 'i-carbon-checkmark text-teal-500' : 'i-carbon-add-comment'" />
-          {{ copiedKey === 'additionalPrompt' ? '已复制' : '复制额外提示词' }}
-        </button>
-        <button
-          type="button" title="删除此项"
-          flex="~ items-center gap-1" px-2.5 py-1 rounded-md text-xs ml-auto
-          border="~ base" cursor-pointer transition-colors duration-200
-          hover="border-red-400 text-red-500"
-          @click="emit('delete')"
-        >
-          <div i-carbon-trash-can />
-          删除
-        </button>
+      <div flex="~ wrap gap-x-2 gap-y-3" justify-between>
+        <!-- 复制按钮组 -->
+        <div flex="~ wrap gap-2">
+          <button
+            type="button" title="复制结果"
+            flex="~ items-center gap-1" px-3 py-1.5 rounded-md text-xs text-white font-bold
+            bg-teal-600 hover:bg-teal-500
+            cursor-pointer transition-colors duration-200
+            @click="copyText('result', props.item.result)"
+          >
+            <div :class="copiedKey === 'result' ? 'i-carbon-checkmark' : 'i-carbon-copy'" />
+            {{ copiedKey === 'result' ? '已复制' : '复制结果' }}
+          </button>
+          <button
+            type="button" title="复制 Prompt"
+            flex="~ items-center gap-1" px-3 py-1.5 rounded-md text-xs text-white font-bold
+            transition-colors duration-200
+            :class="props.item.prompt
+              ? 'bg-teal-600 hover:bg-teal-500 cursor-pointer'
+              : 'bg-teal-600 op-40 cursor-not-allowed'"
+            :disabled="!props.item.prompt"
+            @click="copyText('prompt', props.item.prompt ?? '')"
+          >
+            <div :class="copiedKey === 'prompt' ? 'i-carbon-checkmark' : 'i-carbon-document'" />
+            {{ copiedKey === 'prompt' ? '已复制' : '复制 Prompt' }}
+          </button>
+          <button
+            type="button" title="复制额外提示词"
+            flex="~ items-center gap-1" px-3 py-1.5 rounded-md text-xs text-white font-bold
+            transition-colors duration-200
+            :class="props.item.additionalPrompt
+              ? 'bg-teal-600 hover:bg-teal-500 cursor-pointer'
+              : 'bg-teal-600 op-40 cursor-not-allowed'"
+            :disabled="!props.item.additionalPrompt"
+            @click="copyText('additionalPrompt', props.item.additionalPrompt ?? '')"
+          >
+            <div :class="copiedKey === 'additionalPrompt' ? 'i-carbon-checkmark' : 'i-carbon-add-comment'" />
+            {{ copiedKey === 'additionalPrompt' ? '已复制' : '复制额外提示词' }}
+          </button>
+        </div>
+
+        <!-- 编辑 / 删除按钮组 -->
+        <div flex="~ gap-2">
+          <button
+            v-if="!isEditing"
+            type="button" title="编辑结果"
+            flex="~ items-center gap-1" px-3 py-1.5 rounded-md text-xs text-white font-bold
+            bg-teal-600 hover:bg-teal-500
+            cursor-pointer transition-colors duration-200
+            @click="startEdit"
+          >
+            <div i-carbon-edit />
+            编辑
+          </button>
+          <button
+            type="button" title="删除此项"
+            flex="~ items-center gap-1" px-3 py-1.5 rounded-md text-xs text-white font-bold
+            bg-red-500 hover:bg-red-400
+            cursor-pointer transition-colors duration-200
+            @click="emit('delete')"
+          >
+            <div i-carbon-trash-can />
+            删除
+          </button>
+        </div>
       </div>
     </div>
 
@@ -198,7 +239,43 @@ async function copyText(key: CopyKey, text: string) {
         >
           <div i-carbon-chevron-up w-5 h-5 opacity-60 />
         </div>
-        <div px-4 py-3>
+
+        <!-- 编辑模式 -->
+        <div v-if="isEditing" px-4 py-3 flex="~ col gap-2">
+          <textarea
+            v-model="editedText"
+            rows="12"
+            w-full px-3 py-2 rounded-lg
+            border="~ base focus:teal-600"
+            bg="transparent"
+            outline="none"
+            resize-y
+            transition-colors duration-200
+          />
+          <div flex="~ justify-end gap-2">
+            <button
+              type="button"
+              text-xs text-white font-bold rounded-md px-4 py-2
+              bg-teal-600 hover:bg-teal-700
+              cursor-pointer transition-colors duration-200
+              @click="confirmEdit"
+            >
+              确认编辑
+            </button>
+            <button
+              type="button"
+              text-xs text-white font-bold rounded-md px-4 py-2
+              bg-red-400 hover:bg-red-500
+              cursor-pointer transition-colors duration-200
+              @click="cancelEdit"
+            >
+              取消
+            </button>
+          </div>
+        </div>
+
+        <!-- 展示模式 -->
+        <div v-else px-4 py-3>
           <MarkdownRenderer :content="props.item.result" />
         </div>
       </div>
