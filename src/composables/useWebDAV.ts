@@ -4,7 +4,7 @@ import { useStorage } from '@vueuse/core'
 import { useIDBKeyval } from '@vueuse/integrations/useIDBKeyval'
 import { ref } from 'vue'
 
-import { additionalPromptPresets, chatgptApiKey, chatgptApiUrl, chatgptModels, geminiApiUrl, geminiModels, grokApiKey, grokApiUrl, grokModels, imageStore, modelOptions } from '~/logic'
+import { additionalPromptPresets, chatgptApiKey, chatgptApiUrl, chatgptModels, customPrompts, geminiApiUrl, geminiModels, grokApiKey, grokApiUrl, grokModels, imageStore, modelOptions } from '~/logic'
 
 export const webdavUrl = useStorage('webdav-url', '')
 export const webdavUsername = useStorage('webdav-username', '')
@@ -14,7 +14,7 @@ const googleApiKey = useStorage('google-api-key', '')
 const concisePrompt = useStorage('concise-prompt', '')
 const detailedPrompt = useStorage('detailed-prompt', '')
 const novelPrompt = useStorage('novel-prompt', '')
-const customPrompts = useStorage('custom-prompt', '')
+const oldCustomPrompt = useStorage('custom-prompt', '')
 const favoriteResults = useIDBKeyval<FavoriteResult[] | undefined>('favorite-results', undefined)
 
 export const webdavSyncing = ref(false)
@@ -98,11 +98,13 @@ function buildSettings() {
     geminiModels: geminiModels.value,
     grokModels: grokModels.value,
     chatgptModels: chatgptModels.value,
+    customPrompts: customPrompts.value,
+    additionalPromptPresets: additionalPromptPresets.value,
+    // 兼容旧版：保留旧字段以便旧版本能读取
     concisePrompt: concisePrompt.value,
     detailedPrompt: detailedPrompt.value,
     novelPrompt: novelPrompt.value,
-    customPrompts: customPrompts.value,
-    additionalPromptPresets: additionalPromptPresets.value,
+    oldCustomPrompt: oldCustomPrompt.value,
   }
 }
 
@@ -152,14 +154,36 @@ function applySettings(data: any) {
     modelOptions.value = data.modelOptions
   }
 
+  // Prompts：优先使用新版数组格式
+  if (Array.isArray(data.customPrompts) && data.customPrompts.length > 0) {
+    customPrompts.value = data.customPrompts
+  }
+  else {
+    // 兼容旧版：从单个字段迁移
+    const migrated: { id: string, name: string, content: string }[] = []
+    if (data.concisePrompt !== undefined && data.concisePrompt !== '')
+      migrated.push({ id: 'concise', name: '简洁', content: data.concisePrompt })
+    if (data.detailedPrompt !== undefined && data.detailedPrompt !== '')
+      migrated.push({ id: 'detailed', name: '详细', content: data.detailedPrompt })
+    if (data.novelPrompt !== undefined && data.novelPrompt !== '')
+      migrated.push({ id: 'novel', name: '小说', content: data.novelPrompt })
+    // 旧版单字段 customPrompt（key: custom-prompt, 非 customPrompts 数组）
+    const oldCustom = data.oldCustomPrompt ?? data.customPrompt
+    if (oldCustom !== undefined && oldCustom !== '')
+      migrated.push({ id: 'custom', name: '自定义', content: oldCustom })
+    if (migrated.length > 0)
+      customPrompts.value = migrated
+  }
+  // 仍同步旧字段到旧版 storage（兼容设置页面可能残留读取旧字段的逻辑）
   if (data.concisePrompt !== undefined)
     concisePrompt.value = data.concisePrompt
   if (data.detailedPrompt !== undefined)
     detailedPrompt.value = data.detailedPrompt
   if (data.novelPrompt !== undefined)
     novelPrompt.value = data.novelPrompt
-  if (data.customPrompts !== undefined)
-    customPrompts.value = data.customPrompts
+  if (data.oldCustomPrompt !== undefined)
+    oldCustomPrompt.value = data.oldCustomPrompt
+
   if (Array.isArray(data.additionalPromptPresets))
     additionalPromptPresets.value = data.additionalPromptPresets
 }
