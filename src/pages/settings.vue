@@ -8,7 +8,7 @@ import { nextTick, onMounted, ref } from 'vue'
 import Input from '~/components/Input.vue'
 import Textarea from '~/components/Textarea.vue'
 import { webdavAction, webdavDownload, webdavPassword, webdavProgress, webdavStatus, webdavSyncing, webdavUpload, webdavUrl, webdavUsername } from '~/composables/useWebDAV'
-import { addPrompt, addProviderModel, chatgptApiKey, chatgptApiUrl, chatgptModels, customPrompts, fetchModelsFromAPI, geminiApiUrl, geminiModels, grokApiKey, grokApiUrl, grokModels, removePrompt, removeProviderModel, resetPrompts, resetProviderModels, updatePrompt, updateProviderModel } from '~/logic'
+import { additionalPromptPresets, addPrompt, addProviderModel, chatgptApiKey, chatgptApiUrl, chatgptModels, customPrompts, fetchModelsFromAPI, geminiApiUrl, geminiModels, grokApiKey, grokApiUrl, grokModels, removePrompt, removeProviderModel, resetPrompts, resetProviderModels, updatePrompt, updateProviderModel } from '~/logic'
 
 const googleApiKey = useStorage('google-api-key', '')
 
@@ -181,16 +181,28 @@ function handleResetModels(provider?: AIProvider) {
 
 const settingsFileInputRef = ref<HTMLInputElement | null>(null)
 
+const importExportProgress = ref({ step: '', current: 0, total: 0 })
+const importExportStatus = ref('')
+const isImportExporting = ref(false)
+
 async function onExportSettings() {
   if (!confirm('确定要导出当前设置吗？')) {
     return
   }
 
+  isImportExporting.value = true
+  importExportProgress.value = { step: '', current: 0, total: 0 }
+  importExportStatus.value = ''
+
   try {
-    // 创建 JSZip 实例
+    // 用 setTimeout(0) 代替 nextTick — 宏任务才能给浏览器绘制窗口
+    const yield_ = () => new Promise<void>(r => setTimeout(r, 0))
+
+    // 准备配置
+    importExportProgress.value = { step: '准备配置数据...', current: 0, total: 0 }
+    await yield_()
     const zip = new JSZip()
 
-    // 准备配置数据
     const settings = {
       googleApiKey: googleApiKey.value,
       geminiApiUrl: geminiApiUrl.value,
@@ -202,31 +214,34 @@ async function onExportSettings() {
       grokModels: grokModels.value,
       chatgptModels: chatgptModels.value,
       customPrompts: customPrompts.value,
+      additionalPromptPresets: additionalPromptPresets.value,
     }
 
-    // 添加配置文件
     zip.file('settings.json', JSON.stringify(settings, null, 2))
 
-    // 添加收藏结果数据
     if (favoriteResults.data.value && favoriteResults.data.value.length > 0) {
       zip.file('favorites.json', JSON.stringify(favoriteResults.data.value, null, 2))
     }
 
-    // 导出所有图片
+    // 导出图片 — 每张都更新进度，每 3 张让出主线程
     const images = imageStore.data.value
     if (images && Object.keys(images).length > 0) {
       const imagesFolder = zip.folder('images')
+      const imageKeys = Object.keys(images).filter(k => !k.endsWith(':mime'))
+      const totalImages = imageKeys.length
+      let processed = 0
 
-      for (const [key, value] of Object.entries(images)) {
-        // 跳过 mime type 条目
-        if (key.endsWith(':mime'))
-          continue
+      for (const key of imageKeys) {
+        processed++
+        importExportProgress.value = { step: '导出图片...', current: processed, total: totalImages }
+        // 每 3 张 yield 一次，让浏览器绘制进度条
+        if (processed % 3 === 0)
+          await yield_()
 
-        const base64Data = value
+        const base64Data = images[key]
         const mimeType = images[`${key}:mime`] || 'image/png'
         const extension = mimeType.split('/')[1] || 'png'
 
-        // 将 base64 转换为 Blob
         const byteCharacters = atob(base64Data)
         const byteNumbers = Array.from({ length: byteCharacters.length })
         for (let i = 0; i < byteCharacters.length; i++) {
@@ -234,12 +249,13 @@ async function onExportSettings() {
         }
         const byteArray = new Uint8Array(byteNumbers as number[])
 
-        // 添加图片文件到 zip
         imagesFolder?.file(`${key}.${extension}`, byteArray)
       }
     }
 
-    // 生成 zip 文件
+    // 生成 zip
+    importExportProgress.value = { step: '生成 ZIP 文件...', current: 0, total: 0 }
+    await yield_()
     const blob = await zip.generateAsync({ type: 'blob' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -248,11 +264,16 @@ async function onExportSettings() {
     a.click()
     URL.revokeObjectURL(url)
 
-    alert('设置和图片已导出为 ZIP 文件')
+    importExportStatus.value = '导出成功'
+    importExportProgress.value = { step: '', current: 0, total: 0 }
   }
   catch (error) {
     console.error('[Export Error]', error)
-    alert(`导出失败：${(error as Error).message}`)
+    importExportStatus.value = `导出失败：${(error as Error).message}`
+    importExportProgress.value = { step: '', current: 0, total: 0 }
+  }
+  finally {
+    isImportExporting.value = false
   }
 }
 
@@ -269,14 +290,21 @@ async function onImportSettingsFile(event: Event) {
   if (!file)
     return
 
+  isImportExporting.value = true
+  importExportProgress.value = { step: '', current: 0, total: 0 }
+  importExportStatus.value = ''
+
   try {
     // 检查文件类型
     if (file.name.endsWith('.zip')) {
       // 处理 zip 文件
+      importExportProgress.value = { step: '正在读取文件...', current: 0, total: 0 }
+      await nextTick()
       const zip = new JSZip()
       const zipContent = await zip.loadAsync(file)
 
       // 读取配置文件
+      importExportProgress.value = { step: '导入设置...', current: 0, total: 0 }
       const settingsFile = zipContent.file('settings.json')
       if (settingsFile) {
         const settingsText = await settingsFile.async('text')
@@ -289,10 +317,15 @@ async function onImportSettingsFile(event: Event) {
       if (imagesFolder) {
         const imageFiles = Object.keys(zipContent.files).filter(name => name.startsWith('images/') && !name.endsWith('/'))
         const newImages: Record<string, string> = {}
+        const totalImages = imageFiles.length
+        let processed = 0
 
         console.log('[Import] Found image files:', imageFiles)
 
         for (const fileName of imageFiles) {
+          processed++
+          importExportProgress.value = { step: '导入图片...', current: processed, total: totalImages }
+
           const file = zipContent.file(fileName)
           if (file) {
             // 提取文件名和扩展名
@@ -321,6 +354,7 @@ async function onImportSettingsFile(event: Event) {
       }
 
       // 读取收藏结果（必须在图片导入之后）
+      importExportProgress.value = { step: '导入收藏数据...', current: 0, total: 0 }
       const favoritesFile = zipContent.file('favorites.json')
       if (favoritesFile) {
         const favoritesText = await favoritesFile.async('text')
@@ -342,19 +376,20 @@ async function onImportSettingsFile(event: Event) {
         }
       }
 
-      alert('设置和图片导入成功')
+      importExportStatus.value = '设置和图片导入成功'
     }
     else {
       // 处理 JSON 文件（兼容旧格式）
       const reader = new FileReader()
       reader.onload = async () => {
         try {
+          importExportProgress.value = { step: '导入设置...', current: 0, total: 0 }
           const data = JSON.parse(reader.result as string)
           await importSettings(data)
-          alert('设置导入成功')
+          importExportStatus.value = '设置导入成功'
         }
         catch {
-          alert('导入失败：文件解析错误')
+          importExportStatus.value = '导入失败：文件解析错误'
         }
       }
       reader.readAsText(file)
@@ -362,10 +397,13 @@ async function onImportSettingsFile(event: Event) {
   }
   catch (error) {
     console.error('[Import Error]', error)
-    alert(`导入失败：${(error as Error).message}`)
+    importExportStatus.value = `导入失败：${(error as Error).message}`
   }
-
-  input.value = ''
+  finally {
+    isImportExporting.value = false
+    importExportProgress.value = { step: '', current: 0, total: 0 }
+    input.value = ''
+  }
 
   // 等待一下让 IndexedDB 完成写入，然后刷新页面以确保数据正确加载
   setTimeout(() => {
@@ -469,6 +507,10 @@ async function importSettings(data: any) {
       customPrompts.value = migrated
     }
   }
+
+  // 导入额外提示词预设
+  if (Array.isArray(data.additionalPromptPresets))
+    additionalPromptPresets.value = data.additionalPromptPresets
 }
 
 function startAdding(provider: AIProvider) {
@@ -1456,6 +1498,24 @@ function getProviderModels(provider: AIProvider): string[] {
         <div i-carbon-download />
         导出设置
       </button>
+    </div>
+
+    <!-- 导入/导出进度条 -->
+    <div v-if="isImportExporting && importExportProgress.step" mt-4>
+      <div flex="~ items-center justify-between" mb-1.5 text-sm op-70>
+        <span>{{ importExportProgress.step }}</span>
+        <span v-if="importExportProgress.total > 0">{{ importExportProgress.current }} / {{ importExportProgress.total }}</span>
+      </div>
+      <div w-full h-1.5 rounded-full bg-gray-200 dark:bg-gray-800 overflow-hidden>
+        <div
+          h-full rounded-full bg-teal-500 transition-all duration-300
+          :style="{ width: importExportProgress.total > 0 ? `${Math.round(importExportProgress.current / importExportProgress.total * 100)}%` : '100%' }"
+        />
+      </div>
+    </div>
+
+    <div v-if="importExportStatus" mt-3 text-sm :class="importExportStatus.includes('失败') ? 'text-red-400' : 'text-teal-600 dark:text-teal-400'">
+      {{ importExportStatus }}
     </div>
 
     <input
