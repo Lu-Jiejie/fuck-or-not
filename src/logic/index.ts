@@ -603,7 +603,7 @@ export async function fetchModelsFromAPI(provider: AIProvider): Promise<string[]
   }
 }
 
-export async function generateContent(model: string, contents: any, systemInstruction: string, provider: AIProvider) {
+export async function generateContent(model: string, contents: any, systemInstruction: string, provider: AIProvider, onChunk?: (text: string) => void) {
   if (provider === 'Gemini') {
     const apiKey = googleApiKey.value
     if (!apiKey) {
@@ -976,6 +976,7 @@ export async function generateContent(model: string, contents: any, systemInstru
             const delta = data.choices?.[0]?.delta
             if (delta?.content) {
               fullText += delta.content
+              onChunk?.(delta.content)
             }
             if (data.choices?.[0]?.finish_reason) {
               finishReason = data.choices[0].finish_reason

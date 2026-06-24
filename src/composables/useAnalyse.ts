@@ -227,11 +227,15 @@ export function useAnalyse() {
           text: finalPrompt,
         },
       ]
+      result.value = ''
       const response = await generateContent(
         selectedModel.value.id,
         contents,
         finalPrompt,
         currentProvider,
+        (chunk) => {
+          result.value += chunk
+        },
       )
       const lastImage = base64Image.value
 
