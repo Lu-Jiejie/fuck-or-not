@@ -954,14 +954,17 @@ export async function generateContent(model: string, contents: any, systemInstru
       const decoder = new TextDecoder()
       let fullText = ''
       let finishReason = 'STOP'
+      let buffer = ''
 
       while (true) {
         const { done, value } = await reader.read()
         if (done)
           break
 
-        const chunk = decoder.decode(value, { stream: true })
-        const lines = chunk.split('\n')
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        // Keep the last (potentially incomplete) line in the buffer
+        buffer = lines.pop() || ''
 
         for (const line of lines) {
           if (!line.trim() || !line.startsWith('data: '))
@@ -984,6 +987,27 @@ export async function generateContent(model: string, contents: any, systemInstru
           }
           catch (parseError) {
             console.warn('[Grok] Failed to parse chunk:', dataStr, parseError)
+          }
+        }
+      }
+
+      // Process any remaining buffered line
+      if (buffer.trim() && buffer.startsWith('data: ')) {
+        const dataStr = buffer.slice(6)
+        if (dataStr !== '[DONE]') {
+          try {
+            const data = JSON.parse(dataStr)
+            const delta = data.choices?.[0]?.delta
+            if (delta?.content) {
+              fullText += delta.content
+              onChunk?.(delta.content)
+            }
+            if (data.choices?.[0]?.finish_reason) {
+              finishReason = data.choices[0].finish_reason
+            }
+          }
+          catch (parseError) {
+            console.warn('[Grok] Failed to parse final chunk:', dataStr, parseError)
           }
         }
       }
