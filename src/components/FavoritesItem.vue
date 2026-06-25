@@ -129,12 +129,10 @@ function downloadImage() {
     flex flex-col gap-3 items-stretch
   >
     <div flex="~ col gap-3">
-      <div flex="~ items-center gap-2" text-sm opacity-80>
+      <div flex="~ wrap items-center gap-x-2 gap-y-1" text-sm opacity-80>
         <span font-bold truncate min-w-0>{{ props.item.model }}</span>
-        <span flex-shrink-0 op-50>·</span>
         <span capitalize truncate min-w-0>{{ modeLabel }}</span>
-        <span flex-shrink-0 op-50>·</span>
-        <span text-xs flex-shrink-0>{{ formatTime(props.item.time) }}</span>
+        <span text-xs truncate min-w-0>{{ formatTime(props.item.time) }}</span>
       </div>
 
       <div flex="~ wrap gap-x-2 gap-y-3" justify-between>
