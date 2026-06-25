@@ -206,6 +206,8 @@ export function useAnalyse() {
     }
 
     analyseButtonLoading.value = true
+    errorMsg.value = ''
+    result.value = ''
 
     try {
       let finalPrompt = selectedPrompt.value.content || '分析这张图片'
@@ -227,7 +229,6 @@ export function useAnalyse() {
           text: finalPrompt,
         },
       ]
-      result.value = ''
       const response = await generateContent(
         selectedModel.value.id,
         contents,
