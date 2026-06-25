@@ -103,6 +103,22 @@ async function copyText(key: CopyKey, text: string) {
     copiedKey.value = null
   }, 1500)
 }
+
+function downloadImage() {
+  const { base64, mimeType } = imageData.value
+  if (!base64)
+    return
+  const ext = mimeType?.split('/')[1] || 'png'
+  const filename = `${props.item.imageHash}.${ext}`
+  const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0))
+  const blob = new Blob([bytes], { type: mimeType })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(url), 100)
+}
 </script>
 
 <template>
@@ -159,6 +175,16 @@ async function copyText(key: CopyKey, text: string) {
           >
             <div :class="copiedKey === 'additionalPrompt' ? 'i-carbon-checkmark' : 'i-carbon-add-comment'" />
             {{ copiedKey === 'additionalPrompt' ? '已复制' : '复制额外提示词' }}
+          </button>
+          <button
+            type="button" title="下载图片"
+            flex="~ items-center gap-1" px-3 py-1.5 rounded-md text-xs text-white font-bold
+            bg-teal-600 hover:bg-teal-500
+            cursor-pointer transition-colors duration-200
+            @click="downloadImage"
+          >
+            <div i-carbon-download />
+            下载图片
           </button>
         </div>
 
