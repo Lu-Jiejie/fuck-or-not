@@ -59,7 +59,7 @@ function onDelete(time: number) {
   }
   nextTick(() => {
     const total = favoriteResults.data.value?.length ?? 0
-    const maxPage = Math.max(1, Math.ceil(total / pageSize))
+    const maxPage = Math.max(1, Math.ceil(total / pageSize.value))
     if (page.value > maxPage) {
       page.value = maxPage
     }
