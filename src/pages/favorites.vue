@@ -6,7 +6,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import FavoritesItem from '~/components/FavoritesItem.vue'
 import FavoritesToolbar from '~/components/FavoritesToolbar.vue'
-import { deleteImageIfUnused, imageStore } from '~/logic'
+import { deletedTimestampsStore, deleteImageIfUnused, imageStore, markAsDeleted } from '~/logic'
 
 const router = useRouter()
 // const isMobile = useMediaQuery('(max-width: 768px)')
@@ -56,6 +56,7 @@ function onDelete(time: number) {
     favoriteResults.data.value?.splice(idx, 1)
     const usedHashes = new Set(favoriteResults.data.value?.map(i => i.imageHash) ?? [])
     deleteImageIfUnused(hash, usedHashes)
+    markAsDeleted(time)
   }
   nextTick(() => {
     const total = favoriteResults.data.value?.length ?? 0
@@ -76,6 +77,11 @@ function onUpdate(time: number, result: string) {
 function onDeleteAll() {
   if (!confirm('确定要删除所有收藏吗？')) {
     return
+  }
+  const allTimestamps = favoriteResults.data.value?.map(i => i.time) ?? []
+  if (allTimestamps.length > 0) {
+    const current = deletedTimestampsStore.data.value
+    deletedTimestampsStore.data.value = [...new Set([...current, ...allTimestamps])]
   }
   favoriteResults.data.value = []
   imageStore.data.value = {}

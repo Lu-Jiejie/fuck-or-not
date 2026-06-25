@@ -4,11 +4,13 @@ import { useStorage } from '@vueuse/core'
 import { useIDBKeyval } from '@vueuse/integrations/useIDBKeyval'
 import { ref } from 'vue'
 
-import { additionalPromptPresets, chatgptApiKey, chatgptApiUrl, chatgptModels, customPrompts, geminiApiUrl, geminiModels, grokApiKey, grokApiUrl, grokModels, imageStore, modelOptions } from '~/logic'
+import { additionalPromptPresets, chatgptApiKey, chatgptApiUrl, chatgptModels, customPrompts, deletedTimestampsStore, geminiApiUrl, geminiModels, grokApiKey, grokApiUrl, grokModels, imageStore, modelOptions } from '~/logic'
 
 export const webdavUrl = useStorage('webdav-url', '')
 export const webdavUsername = useStorage('webdav-username', '')
 export const webdavPassword = useStorage('webdav-password', '')
+export const webdavLastSyncETag = useStorage('webdav-last-sync-etag', '')
+export const webdavLastSyncIds = useStorage<number[]>('webdav-last-sync-ids', [])
 
 const googleApiKey = useStorage('google-api-key', '')
 const concisePrompt = useStorage('concise-prompt', '')
@@ -45,13 +47,15 @@ async function webdavRequest(path: string, method: string, body?: string | Blob,
   const headers: Record<string, string> = { ...authHeaders() }
   if (contentType)
     headers['Content-Type'] = contentType
-  return fetch(`${base}${path}`, { method, headers, body })
+  // 强制禁用缓存，防止手机端浏览器缓存 GET 请求导致无法拉取新数据
+  return fetch(`${base}${path}`, { method, headers, body, cache: 'no-store' })
 }
 
 async function webdavPut(path: string, content: string, contentType = 'application/json') {
   const res = await webdavRequest(path, 'PUT', content, contentType)
   if (!res.ok)
     throw new Error(`PUT ${path} failed: ${res.status} ${res.statusText}`)
+  return res
 }
 
 async function webdavGet(path: string): Promise<string> {
@@ -188,6 +192,44 @@ function applySettings(data: any) {
     additionalPromptPresets.value = data.additionalPromptPresets
 }
 
+/**
+ * B: 并发冲突自动合并 — 当上传时检测到远端已被其他设备修改，
+ * 自动拉取远端数据 + 远端墓碑，与本地的收藏项和墓碑合并后更新本地状态，
+ * 然后继续上传流程。
+ */
+async function autoMergeFromRemote() {
+  const favRes = await webdavRequest(`${DIR}/favorites.json`, 'GET')
+  if (!favRes.ok)
+    throw new Error('合并失败：无法获取远端数据')
+  const remoteFavs = JSON.parse(await favRes.text()) as FavoriteResult[]
+
+  const tombText = await webdavGet(`${DIR}/tombstones.json`)
+  const remoteTombstones = new Set<number>(tombText ? JSON.parse(tombText) : [])
+
+  const localItems = favoriteResults.data.value ?? []
+  const localTombstones = new Set(deletedTimestampsStore.data.value)
+
+  // 以本地数据为基础，添加远端新增的项（排除被本地墓碑标记的）
+  const mergedMap = new Map<number, FavoriteResult>()
+  for (const item of localItems)
+    mergedMap.set(item.time, item)
+
+  for (const item of remoteFavs) {
+    if (!localTombstones.has(item.time))
+      mergedMap.set(item.time, item)
+  }
+
+  // 删除远端已墓碑标记的项
+  for (const ts of remoteTombstones)
+    mergedMap.delete(ts)
+
+  // 合并墓碑列表
+  const mergedTombstones = [...new Set([...localTombstones, ...remoteTombstones])]
+
+  favoriteResults.data.value = Array.from(mergedMap.values()).sort((a, b) => b.time - a.time)
+  deletedTimestampsStore.data.value = mergedTombstones
+}
+
 export async function webdavUpload() {
   if (!webdavUrl.value) {
     webdavStatus.value = '请先填写 WebDAV 地址'
@@ -198,6 +240,36 @@ export async function webdavUpload() {
   webdavStatus.value = ''
   try {
     await ensureDirs()
+
+    // B: 检查并发冲突 (脏写保护)
+    setProgress('检查远端冲突...')
+    const headRes = await webdavRequest(`${DIR}/favorites.json`, 'HEAD')
+    if (headRes.ok) {
+      const remoteETag = headRes.headers.get('ETag') || headRes.headers.get('Last-Modified') || ''
+      if (remoteETag && webdavLastSyncETag.value && remoteETag !== webdavLastSyncETag.value) {
+        setProgress('检测到远端变更，自动合并...')
+        await autoMergeFromRemote()
+      }
+    }
+
+    //
+    // 本地垃圾回收：清理本地缓存中不再被收藏引用的图片
+    setProgress('清理本地缓存图片...')
+    const allLocalItems = favoriteResults.data.value ?? []
+    const referencedLocal = new Set(allLocalItems.map(i => i.imageHash))
+    const tempStore = { ...imageStore.data.value }
+    let localDeletedKeys = 0
+    for (const key of Object.keys(tempStore)) {
+      const hash = key.split(':')[0]
+      if (!referencedLocal.has(hash)) {
+        delete tempStore[key]
+        localDeletedKeys++
+      }
+    }
+    if (localDeletedKeys > 0) {
+      imageStore.data.value = tempStore
+    }
+    const localDeletedImages = Math.ceil(localDeletedKeys / 2)
 
     // 上传设置
     setProgress('上传设置...')
@@ -245,16 +317,51 @@ export async function webdavUpload() {
       }
     }
 
+    // A: 上传墓碑标记 — 明确告知远端哪些项被主动删除了
+    setProgress('上传墓碑标记...')
+    const localTombstones = deletedTimestampsStore.data.value
+    await webdavPut(`${DIR}/tombstones.json`, JSON.stringify(localTombstones, null, 2))
+
+    // C: 严格等所有资源（图片）全部上传成功后，最后再写配置，保证原子性
+    setProgress('上传收藏列表...')
+    const allItems = favoriteResults.data.value ?? []
+    const putRes = await webdavPut(`${DIR}/favorites.json`, JSON.stringify(allItems, null, 2))
+
+    // 记录同步状态（ETag和ID基准线）
+    webdavLastSyncETag.value = putRes.headers.get('ETag') || putRes.headers.get('Last-Modified') || ''
+    webdavLastSyncIds.value = allItems.map(i => i.time)
+
+    // 垃圾回收：清理远端已不再被任何收藏项引用的图片
+    setProgress('清理远端闲置图片...')
+    const referencedHashes = new Set(allItems.map(i => i.imageHash))
+    const orphanHashes = [...remoteHashes].filter(h => !referencedHashes.has(h))
+
+    let deletedCount = 0
+    for (const hash of orphanHashes) {
+      // 尝试获取文件扩展名。如果本地还有记录则使用本地 mime，否则回退到逐个尝试常见扩展名
+      const possibleExts = store[`${hash}:mime`]
+        ? [mimeToExt(store[`${hash}:mime`])]
+        : ['png', 'jpg', 'webp', 'gif', 'bmp']
+
+      for (const ext of possibleExts) {
+        const delRes = await webdavRequest(`${DIR_IMAGES}/${hash}.${ext}`, 'DELETE')
+        if (delRes.ok) {
+          deletedCount++
+          break // 成功删除后跳出循环
+        }
+      }
+      // 从远端索引记录中移除
+      remoteHashes.delete(hash)
+    }
+
     // 更新远端图片索引
     setProgress('更新图片索引...')
     await webdavPut(`${DIR}/image-index.json`, JSON.stringify([...remoteHashes]))
 
-    // 上传收藏列表
-    setProgress('上传收藏列表...')
-    const allItems = favoriteResults.data.value ?? []
-    await webdavPut(`${DIR}/favorites.json`, JSON.stringify(allItems, null, 2))
-
-    webdavStatus.value = `上传成功（新增 ${uploaded} 张，跳过已存在 ${skipped} 张）`
+    let msg = `上传成功（新增 ${uploaded} 张，跳过 ${skipped} 张，远端清理 ${deletedCount} 张）`
+    if (localDeletedImages > 0)
+      msg = msg.replace('）', `，本地清理 ${localDeletedImages} 张）`)
+    webdavStatus.value = msg
     setProgress('')
   }
   catch (e: any) {
@@ -284,12 +391,20 @@ export async function webdavDownload() {
 
     // 下载收藏列表
     setProgress('下载收藏列表...')
-    const favText = await webdavGet(`${DIR}/favorites.json`)
+    const favRes = await webdavRequest(`${DIR}/favorites.json`, 'GET')
+    if (!favRes.ok && favRes.status !== 404) {
+      throw new Error(`GET favorites.json failed: ${favRes.status} ${favRes.statusText}`)
+    }
+    const favText = favRes.ok ? await favRes.text() : ''
+
     if (!favText) {
       webdavStatus.value = '下载成功（无收藏数据）'
       setProgress('')
       return
     }
+
+    // 保存最新的 ETag
+    webdavLastSyncETag.value = favRes.headers.get('ETag') || favRes.headers.get('Last-Modified') || ''
 
     const remoteFavs = JSON.parse(favText) as FavoriteResult[]
     if (!Array.isArray(remoteFavs)) {
@@ -298,46 +413,87 @@ export async function webdavDownload() {
       return
     }
 
-    const existingTimes = new Set(favoriteResults.data.value?.map(item => item.time) ?? [])
-    const newItems = remoteFavs.filter(item => !existingTimes.has(item.time))
+    const localItems = favoriteResults.data.value ?? []
+    const localMap = new Map(localItems.map(item => [item.time, item]))
+    const localTombstones = new Set(deletedTimestampsStore.data.value)
 
-    // 获取远端图片索引，用于确定文件扩展名
+    // A: 下载远端墓碑标记（远端主动删除了哪些项）
+    const remoteTombstoneText = await webdavGet(`${DIR}/tombstones.json`)
+    const remoteTombstones = new Set<number>(remoteTombstoneText ? JSON.parse(remoteTombstoneText) : [])
+
+    let hasChanges = false
+    const itemsToProcess: FavoriteResult[] = []
+
+    // 应用远端墓碑：远端已删除的项，本地也要同步删除
+    for (const ts of remoteTombstones) {
+      if (localMap.has(ts)) {
+        localMap.delete(ts)
+        hasChanges = true
+      }
+    }
+
+    for (const remoteItem of remoteFavs) {
+      // ★ 幽灵复活防护：本地已墓碑标记的项，拒绝从远端恢复
+      if (localTombstones.has(remoteItem.time))
+        continue
+      // 远端已墓碑标记的项，跳过
+      if (remoteTombstones.has(remoteItem.time))
+        continue
+
+      const localItem = localMap.get(remoteItem.time)
+      if (!localItem || JSON.stringify(localItem) !== JSON.stringify(remoteItem)) {
+        localMap.set(remoteItem.time, remoteItem)
+        itemsToProcess.push(remoteItem)
+        hasChanges = true
+      }
+    }
+
+    // 获取远端图片索引
     const remoteIndexText = await webdavGet(`${DIR}/image-index.json`)
     const remoteHashList: string[] = remoteIndexText ? JSON.parse(remoteIndexText) : []
     const remoteHashSet = new Set(remoteHashList)
 
-    // 只下载本地 imageStore 中没有的图片
+    // C: 下载缺失图片
     const localStore = imageStore.data.value
-    const hashesToDownload = [...new Set(newItems.map(i => i.imageHash))]
+    const hashesToDownload = [...new Set(itemsToProcess.map(i => i.imageHash))]
       .filter(h => !localStore[h] && remoteHashSet.has(h))
 
     let downloaded = 0
     const newImages: Record<string, string> = { ...localStore }
     for (const hash of hashesToDownload) {
-      // 找到该 hash 对应的 mimeType（从远端 favs 中取）
       const refItem = remoteFavs.find(i => i.imageHash === hash)
       const mimeType = refItem?.mimeType ?? 'image/png'
       const ext = mimeToExt(mimeType)
+
       setProgress(`下载图片...`, ++downloaded, hashesToDownload.length)
-      const res = await webdavRequest(`${DIR_IMAGES}/${hash}.${ext}`, 'GET')
-      if (res.ok) {
-        const arrayBuffer = await res.arrayBuffer()
-        const bytes = new Uint8Array(arrayBuffer)
-        let binary = ''
-        for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i])
-        newImages[hash] = btoa(binary)
-        newImages[`${hash}:mime`] = mimeType
-      }
+      const imgRes = await webdavRequest(`${DIR_IMAGES}/${hash}.${ext}`, 'GET')
+      if (!imgRes.ok)
+        continue
+
+      const blob = await imgRes.blob()
+      const arrayBuffer = await blob.arrayBuffer()
+      const bytes = new Uint8Array(arrayBuffer)
+      let binary = ''
+      for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i])
+      newImages[hash] = btoa(binary)
+      newImages[`${hash}:mime`] = mimeType
     }
     imageStore.data.value = newImages
 
-    if (newItems.length > 0) {
-      favoriteResults.data.value = [...(favoriteResults.data.value ?? []), ...newItems]
+    if (hasChanges) {
+      favoriteResults.data.value = Array.from(localMap.values())
         .sort((a, b) => b.time - a.time)
     }
 
-    webdavStatus.value = `下载成功（新增 ${newItems.length} 条，图片 ${downloaded} 张）`
+    // 合并本地 + 远端墓碑
+    const mergedTombstones = [...new Set([...localTombstones, ...remoteTombstones])]
+    deletedTimestampsStore.data.value = mergedTombstones
+
+    webdavStatus.value = `下载成功（更新 ${itemsToProcess.length} 条，图片 ${downloaded} 张）`
     setProgress('')
+
+    // 更新最后同步基准
+    webdavLastSyncIds.value = (favoriteResults.data.value ?? []).map(i => i.time)
   }
   catch (e: any) {
     webdavStatus.value = `下载失败：${e.message}`

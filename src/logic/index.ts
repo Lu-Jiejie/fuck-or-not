@@ -1238,3 +1238,13 @@ export function deleteImageIfUnused(hash: string, usedHashes: Set<string>) {
     imageStore.data.value = next
   }
 }
+
+// 墓碑标记存储：追踪本地主动删除的收藏项时间戳，用于 WebDAV 同步防幽灵复活
+export const deletedTimestampsStore = useIDBKeyval<number[]>('favorite-deleted-timestamps', [])
+
+export function markAsDeleted(time: number) {
+  const current = deletedTimestampsStore.data.value
+  if (!current.includes(time)) {
+    deletedTimestampsStore.data.value = [...current, time]
+  }
+}
