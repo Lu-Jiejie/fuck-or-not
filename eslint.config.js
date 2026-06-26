@@ -9,4 +9,5 @@ export default antfu(
   'no-irregular-whitespace',
   'no-console',
   'no-alert',
+  'style/max-statements-per-line',
 )

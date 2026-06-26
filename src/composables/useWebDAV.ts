@@ -2,19 +2,13 @@ import type { FavoriteResult } from '~/types'
 import { useStorage } from '@vueuse/core'
 import { ref } from 'vue'
 
-import { additionalPromptPresets, chatgptApiKey, chatgptApiUrl, chatgptModels, customPrompts, deletedTimestampsStore, favoriteResults, geminiApiUrl, geminiModels, grokApiKey, grokApiUrl, grokModels, imageStore, modelOptions } from '~/logic'
+import { additionalPromptPresets, customPrompts, deletedTimestampsStore, favoriteResults, imageStore, providers } from '~/logic'
 
 export const webdavUrl = useStorage('webdav-url', '')
 export const webdavUsername = useStorage('webdav-username', '')
 export const webdavPassword = useStorage('webdav-password', '')
 export const webdavLastSyncETag = useStorage('webdav-last-sync-etag', '')
 export const webdavLastSyncIds = useStorage<number[]>('webdav-last-sync-ids', [])
-
-const googleApiKey = useStorage('google-api-key', '')
-const concisePrompt = useStorage('concise-prompt', '')
-const detailedPrompt = useStorage('detailed-prompt', '')
-const novelPrompt = useStorage('novel-prompt', '')
-const oldCustomPrompt = useStorage('custom-prompt', '')
 
 export const webdavSyncing = ref(false)
 export const webdavAction = ref<'upload' | 'download' | ''>('')
@@ -91,100 +85,18 @@ function mimeToExt(mimeType: string): string {
 
 function buildSettings() {
   return {
-    googleApiKey: googleApiKey.value,
-    geminiApiUrl: geminiApiUrl.value,
-    grokApiKey: grokApiKey.value,
-    grokApiUrl: grokApiUrl.value,
-    chatgptApiKey: chatgptApiKey.value,
-    chatgptApiUrl: chatgptApiUrl.value,
-    geminiModels: geminiModels.value,
-    grokModels: grokModels.value,
-    chatgptModels: chatgptModels.value,
+    providers: providers.value,
     customPrompts: customPrompts.value,
     additionalPromptPresets: additionalPromptPresets.value,
-    // 兼容旧版：保留旧字段以便旧版本能读取
-    concisePrompt: concisePrompt.value,
-    detailedPrompt: detailedPrompt.value,
-    novelPrompt: novelPrompt.value,
-    oldCustomPrompt: oldCustomPrompt.value,
   }
 }
 
 function applySettings(data: any) {
-  if (data.googleApiKey !== undefined)
-    googleApiKey.value = data.googleApiKey
-  if (data.geminiApiUrl !== undefined)
-    geminiApiUrl.value = data.geminiApiUrl
-  if (data.grokApiKey !== undefined)
-    grokApiKey.value = data.grokApiKey
-  if (data.grokApiUrl !== undefined)
-    grokApiUrl.value = data.grokApiUrl
-  if (data.chatgptApiKey !== undefined)
-    chatgptApiKey.value = data.chatgptApiKey
-  if (data.chatgptApiUrl !== undefined)
-    chatgptApiUrl.value = data.chatgptApiUrl
+  if (Array.isArray(data.providers))
+    providers.value = data.providers
 
-  // 模型列表：优先使用新版分组格式
-  if (Array.isArray(data.geminiModels) && data.geminiModels.length > 0)
-    geminiModels.value = data.geminiModels
-  if (Array.isArray(data.grokModels) && data.grokModels.length > 0)
-    grokModels.value = data.grokModels
-  if (Array.isArray(data.chatgptModels) && data.chatgptModels.length > 0)
-    chatgptModels.value = data.chatgptModels
-
-  // 兼容旧版：如果云端只有统一的 modelOptions，则按 provider 拆分
-  if (Array.isArray(data.modelOptions) && data.modelOptions.length > 0) {
-    if (geminiModels.value.length === 0 && grokModels.value.length === 0 && chatgptModels.value.length === 0) {
-      const gemini: string[] = []
-      const grok: string[] = []
-      const chatgpt: string[] = []
-      for (const model of data.modelOptions) {
-        if (model.provider === 'Gemini')
-          gemini.push(model.id)
-        else if (model.provider === 'Grok')
-          grok.push(model.id)
-        else if (model.provider === 'ChatGPT')
-          chatgpt.push(model.id)
-      }
-      if (gemini.length > 0)
-        geminiModels.value = gemini
-      if (grok.length > 0)
-        grokModels.value = grok
-      if (chatgpt.length > 0)
-        chatgptModels.value = chatgpt
-    }
-    modelOptions.value = data.modelOptions
-  }
-
-  // Prompts：优先使用新版数组格式
-  if (Array.isArray(data.customPrompts) && data.customPrompts.length > 0) {
+  if (Array.isArray(data.customPrompts) && data.customPrompts.length > 0)
     customPrompts.value = data.customPrompts
-  }
-  else {
-    // 兼容旧版：从单个字段迁移
-    const migrated: { id: string, name: string, content: string }[] = []
-    if (data.concisePrompt !== undefined && data.concisePrompt !== '')
-      migrated.push({ id: 'concise', name: '简洁', content: data.concisePrompt })
-    if (data.detailedPrompt !== undefined && data.detailedPrompt !== '')
-      migrated.push({ id: 'detailed', name: '详细', content: data.detailedPrompt })
-    if (data.novelPrompt !== undefined && data.novelPrompt !== '')
-      migrated.push({ id: 'novel', name: '小说', content: data.novelPrompt })
-    // 旧版单字段 customPrompt（key: custom-prompt, 非 customPrompts 数组）
-    const oldCustom = data.oldCustomPrompt ?? data.customPrompt
-    if (oldCustom !== undefined && oldCustom !== '')
-      migrated.push({ id: 'custom', name: '自定义', content: oldCustom })
-    if (migrated.length > 0)
-      customPrompts.value = migrated
-  }
-  // 仍同步旧字段到旧版 storage（兼容设置页面可能残留读取旧字段的逻辑）
-  if (data.concisePrompt !== undefined)
-    concisePrompt.value = data.concisePrompt
-  if (data.detailedPrompt !== undefined)
-    detailedPrompt.value = data.detailedPrompt
-  if (data.novelPrompt !== undefined)
-    novelPrompt.value = data.novelPrompt
-  if (data.oldCustomPrompt !== undefined)
-    oldCustomPrompt.value = data.oldCustomPrompt
 
   if (Array.isArray(data.additionalPromptPresets))
     additionalPromptPresets.value = data.additionalPromptPresets

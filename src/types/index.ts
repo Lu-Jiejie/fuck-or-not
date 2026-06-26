@@ -1,29 +1,18 @@
-export type AIProvider = 'Gemini' | 'Grok' | 'ChatGPT'
+export type APIProviderType = 'gemini' | 'openai'
 
-export interface ModelOption {
+export interface ProviderConfig {
   id: string
-  provider: AIProvider
+  name: string
+  type: APIProviderType
+  apiUrl: string
+  apiKey: string
+  models: string[]
 }
 
 export interface CustomPrompt {
   id: string
   name: string
   content: string
-}
-
-export interface GeminiConfig {
-  apiUrl?: string
-  apiKey?: string
-}
-
-export interface GrokConfig {
-  apiUrl?: string
-  apiKey?: string
-}
-
-export interface ChatGPTConfig {
-  apiUrl?: string
-  apiKey?: string
 }
 
 export interface FavoriteResult {

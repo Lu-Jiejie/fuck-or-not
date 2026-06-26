@@ -1,14 +1,14 @@
-import type { AIProvider, FavoriteResult, ModelOption } from '~/types'
+import type { FavoriteResult } from '~/types'
 import { useStorage } from '@vueuse/core'
 import { computed, ref, watch } from 'vue'
-import { addAdditionalPreset, additionalPromptPresets, chatgptApiKey, computeStringHash, customPrompts, favoriteResults, fileToBase64, generateContent, getPromptById, getProviderModels, googleApiKey, grokApiKey, modelOptions, removeAdditionalPreset, saveImage } from '~/logic'
+import { addAdditionalPreset, additionalPromptPresets, computeStringHash, customPrompts, favoriteResults, fileToBase64, generateContent, getPromptById, providers, removeAdditionalPreset, saveImage } from '~/logic'
 
 export function useAnalyse() {
   const image = ref<File | string | null>(null)
   const base64Image = ref<string | null>(null)
 
-  const selectedProvider = useStorage<AIProvider>('selected-provider', 'Gemini')
-  const selectedModelId = useStorage('selected-model', 'gemini-2.5-flash')
+  const selectedProviderId = useStorage<string | undefined>('selected-provider-id', undefined)
+  const selectedModelId = useStorage('selected-model', '')
   const selectedPromptId = useStorage('selected-prompt-id', 'novel')
   const additionalPrompt = ref('')
   const result = ref('')
@@ -22,68 +22,46 @@ export function useAnalyse() {
 
   const lastFavoriteResult = ref<FavoriteResult | null>(null)
 
-  // 当提供商改变时，自动选择该提供商的第一个模型
-  watch(selectedProvider, (newProvider) => {
-    const models = getProviderModels(newProvider)
-    if (models.length > 0 && !models.includes(selectedModelId.value)) {
-      selectedModelId.value = models[0]
-    }
+  const selectedProvider = computed(() => {
+    if (!selectedProviderId.value)
+      return undefined
+    return providers.value.find(p => p.id === selectedProviderId.value)
+  })
+
+  // 当供应商 id 改变时，清空已选的模型
+  watch(selectedProviderId, () => {
+    selectedModelId.value = ''
   })
 
   // 确保选中的 Prompt ID 有效
   watch(() => customPrompts.value, () => {
     const exists = customPrompts.value.some(p => p.id === selectedPromptId.value)
-    if (!exists && customPrompts.value.length > 0) {
+    if (!exists && customPrompts.value.length > 0)
       selectedPromptId.value = customPrompts.value[0].id
-    }
   }, { immediate: true, deep: true })
 
-  const currentProviderModels = computed(() => {
-    return getProviderModels(selectedProvider.value)
+  const providerSelectOptions = computed(() =>
+    providers.value.map(p => ({ label: p.name, value: p.id })),
+  )
+
+  const modelSelectOptions = computed(() => {
+    if (!selectedProvider.value)
+      return []
+    return selectedProvider.value.models.map(m => ({ label: m, value: m }))
   })
 
-  const selectedModel = computed<ModelOption | undefined>(() => {
-    // 先尝试从新的分组模型中查找
-    if (currentProviderModels.value.includes(selectedModelId.value)) {
-      return {
-        id: selectedModelId.value,
-        provider: selectedProvider.value,
-      }
-    }
-    // 兼容旧版：从 modelOptions 中查找
-    return modelOptions.value.find(m => m.id === selectedModelId.value)
-  })
+  const promptSelectOptions = computed(() =>
+    customPrompts.value.map(prompt => ({ label: prompt.name, value: prompt.id })),
+  )
 
-  const selectedPrompt = computed(() => {
-    return getPromptById(selectedPromptId.value)
-  })
+  const selectedPrompt = computed(() => getPromptById(selectedPromptId.value))
 
   const analyseButtonDisabled = computed(() => {
-    if (!selectedModelId.value || !selectedPromptId.value)
+    if (!selectedModelId.value || !selectedPromptId.value || !selectedProvider.value)
       return true
     if (typeof image.value === 'string')
       return !image.value
     return !image.value
-  })
-
-  const providerSelectOptions = computed(() => [
-    { label: 'Gemini', value: 'Gemini' as AIProvider },
-    { label: 'Grok', value: 'Grok' as AIProvider },
-    { label: 'ChatGPT', value: 'ChatGPT' as AIProvider },
-  ])
-
-  const modelSelectOptions = computed(() => {
-    return currentProviderModels.value.map(modelId => ({
-      label: modelId,
-      value: modelId,
-    }))
-  })
-
-  const promptSelectOptions = computed(() => {
-    return customPrompts.value.map(prompt => ({
-      label: prompt.name,
-      value: prompt.id,
-    }))
   })
 
   // 额外提示词预设（标签栏模式）
@@ -96,9 +74,8 @@ export function useAnalyse() {
     }
     selectedAdditionalPresetId.value = id
     const preset = additionalPromptPresets.value.find(p => p.id === id)
-    if (preset) {
+    if (preset)
       additionalPrompt.value = preset.content
-    }
   }
 
   function handleDeletePreset(id: string) {
@@ -106,9 +83,8 @@ export function useAnalyse() {
       ;(document.activeElement as HTMLElement)?.blur()
       return
     }
-    if (selectedAdditionalPresetId.value === id) {
+    if (selectedAdditionalPresetId.value === id)
       selectedAdditionalPresetId.value = null
-    }
     removeAdditionalPreset(id)
   }
 
@@ -129,9 +105,8 @@ export function useAnalyse() {
 
   function handleConfirmEditResult() {
     result.value = editedResultText.value
-    if (lastFavoriteResult.value) {
+    if (lastFavoriteResult.value)
       lastFavoriteResult.value.result = editedResultText.value
-    }
     isEditingResult.value = false
   }
 
@@ -139,7 +114,7 @@ export function useAnalyse() {
     isEditingResult.value = false
   }
 
-  // 仅用于开发测试：填充一段模拟结果，便于验证结果展示与编辑功能
+  // 仅用于开发测试
   function handleFillTestResult() {
     errorMsg.value = ''
     isEditingResult.value = false
@@ -182,28 +157,20 @@ export function useAnalyse() {
     const arrayBuffer = await blob.arrayBuffer()
     const bytes = new Uint8Array(arrayBuffer)
     let binary = ''
-    for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i])
+    for (let i = 0; i < bytes.byteLength; i++)
+      binary += String.fromCharCode(bytes[i])
     return { base64: btoa(binary), mimeType }
   }
 
   async function handleAnalyseButtonClick() {
-    if (!selectedModel.value) {
-      errorMsg.value = '请先选择模型。'
+    const provider = selectedProvider.value
+    if (!provider) {
+      errorMsg.value = '请先选择供应商。'
       return
     }
 
-    const currentProvider = selectedModel.value.provider
-
-    if (currentProvider === 'Gemini' && !googleApiKey.value) {
-      errorMsg.value = '请先设置 Gemini API 密钥。'
-      return
-    }
-    if (currentProvider === 'Grok' && !grokApiKey.value) {
-      errorMsg.value = '请先设置 Grok API 密钥。'
-      return
-    }
-    if (currentProvider === 'ChatGPT' && !chatgptApiKey.value) {
-      errorMsg.value = '请先设置 ChatGPT API 密钥。'
+    if (!provider.apiKey) {
+      errorMsg.value = `请先配置「${provider.name}」的 API 密钥。`
       return
     }
 
@@ -228,10 +195,8 @@ export function useAnalyse() {
     try {
       let finalPrompt = selectedPrompt.value.content || '分析这张图片'
 
-      // 如果有额外的提示词，添加到最终 Prompt 中
-      if (additionalPrompt.value.trim()) {
+      if (additionalPrompt.value.trim())
         finalPrompt = `${finalPrompt}\n\n用户补充说明：${additionalPrompt.value.trim()}`
-      }
 
       let sourceUrl: string | undefined
       let mimeType: string
@@ -246,21 +211,14 @@ export function useAnalyse() {
         mimeType = image.value!.type
       }
       const contents: Parameters<typeof generateContent>[1] = [
-        {
-          inlineData: {
-            data: base64Image.value,
-            mimeType,
-          },
-        },
-        {
-          text: finalPrompt,
-        },
+        { inlineData: { data: base64Image.value, mimeType } },
+        { text: finalPrompt },
       ]
       const response = await generateContent(
-        selectedModel.value.id,
+        selectedModelId.value,
         contents,
         finalPrompt,
-        currentProvider,
+        provider,
         (chunk) => {
           result.value += chunk
         },
@@ -282,7 +240,7 @@ export function useAnalyse() {
         result.value = response.text!
         errorMsg.value = ''
         lastFavoriteResult.value = {
-          model: selectedModel.value.id,
+          model: selectedModelId.value,
           mode: selectedPromptId.value,
           imageHash: '',
           mimeType,
@@ -296,11 +254,7 @@ export function useAnalyse() {
       }
     }
     catch (error) {
-      console.error('[Analysis Error]', {
-        provider: currentProvider,
-        model: selectedModel.value.id,
-        error,
-      })
+      console.error('[Analysis Error]', { provider: provider.name, error })
       errorMsg.value = `Error: ${(error as Error).message || String(error)}`
     }
     finally {
@@ -328,13 +282,11 @@ export function useAnalyse() {
     }
 
     if (sourceUrl) {
-      // URL 图片：不存入 imageStore，保留链接
       hash = await computeStringHash(sourceUrl)
       item.imageHash = hash
       item.imageUrl = sourceUrl
     }
     else {
-      // 文件上传：存入 imageStore
       hash = await saveImage(base64, mimeType)
       item.imageHash = hash
     }
@@ -346,10 +298,10 @@ export function useAnalyse() {
 
   return {
     image,
-    selectedProvider,
+    selectedProviderId,
     selectedModelId,
     selectedPromptId,
-    selectedModel,
+    selectedProvider,
     selectedPrompt,
     additionalPrompt,
     result,

@@ -13,7 +13,7 @@ defineOptions({
 
 const {
   image,
-  selectedProvider,
+  selectedProviderId,
   selectedModelId,
   selectedPromptId,
   additionalPrompt,
@@ -70,8 +70,8 @@ onBeforeRouteLeave(() => {
   <!-- 配置区 -->
   <div mb-4 rounded-xl border="~ base" bg="white dark:black" p-6 text-left>
     <div mb-5>
-      <span label ml-0.5>提供商</span>
-      <Select v-model="selectedProvider" :options="providerSelectOptions" />
+      <span label ml-0.5>供应商</span>
+      <Select v-model="selectedProviderId" :options="providerSelectOptions" />
     </div>
     <div mb-5>
       <span label ml-0.5>模型</span>
