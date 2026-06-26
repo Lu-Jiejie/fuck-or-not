@@ -1,6 +1,6 @@
 import type { FavoriteResult } from '~/types'
 import { useStorage } from '@vueuse/core'
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, watchEffect } from 'vue'
 import { addAdditionalPreset, additionalPromptPresets, computeStringHash, customPrompts, favoriteResults, fileToBase64, generateContent, getPromptById, providers, removeAdditionalPreset, saveImage } from '~/logic'
 
 export function useAnalyse() {
@@ -34,11 +34,12 @@ export function useAnalyse() {
   })
 
   // 确保选中的 Prompt ID 有效
-  watch(() => customPrompts.value, () => {
-    const exists = customPrompts.value.some(p => p.id === selectedPromptId.value)
-    if (!exists && customPrompts.value.length > 0)
-      selectedPromptId.value = customPrompts.value[0].id
-  }, { immediate: true, deep: true })
+  watchEffect(() => {
+    const prompts = customPrompts.value
+    const exists = prompts.some(p => p.id === selectedPromptId.value)
+    if (!exists && prompts.length > 0)
+      selectedPromptId.value = prompts[0].id
+  })
 
   const providerSelectOptions = computed(() =>
     providers.value.map(p => ({ label: p.name, value: p.id })),

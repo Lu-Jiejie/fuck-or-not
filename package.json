@@ -10,7 +10,6 @@
     "lint": "eslint .",
     "typecheck": "vue-tsc",
     "preview": "vite preview",
-    "test": "vitest",
     "up": "taze major -I",
     "postinstall": "npx simple-git-hooks",
     "release": "bumpp"
@@ -48,7 +47,6 @@
     "unocss": "^66.7.0",
     "unplugin-vue-router": "^0.19.1",
     "vite": "^8.0.16",
-    "vitest": "^4.1.8",
     "vue-tsc": "^3.3.4"
   },
   "resolutions": {

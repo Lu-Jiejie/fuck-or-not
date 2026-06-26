@@ -2,7 +2,7 @@ import type { FavoriteResult } from '~/types'
 import { useStorage } from '@vueuse/core'
 import { ref } from 'vue'
 
-import { additionalPromptPresets, customPrompts, deletedTimestampsStore, favoriteResults, imageStore, providers } from '~/logic'
+import { additionalPromptPresets, base64ToBytes, customPrompts, deletedTimestampsStore, favoriteResults, imageStore, providers } from '~/logic'
 
 export const webdavUrl = useStorage('webdav-url', '')
 export const webdavUsername = useStorage('webdav-username', '')
@@ -138,7 +138,9 @@ async function autoMergeFromRemote() {
 
   // 不合并远端墓碑到本地，只保留本地主动删除且不在合并后收藏中的
   const finalTimes = new Set(Array.from(mergedMap.values()).map(i => i.time))
-  favoriteResults.data.value = Array.from(mergedMap.values()).sort((a, b) => b.time - a.time)
+  favoriteResults.data.value = Array.from(mergedMap.values())
+    .sort((a, b) => b.time - a.time)
+    .map(item => ({ ...item }))
   deletedTimestampsStore.data.value = deletedTimestampsStore.data.value.filter(t => !finalTimes.has(t))
 }
 
@@ -251,7 +253,7 @@ export async function webdavUpload() {
         // 真正执行上传
         setProgress(`上传图片...`, ++uploaded, localHashes.length - skipped)
         const base64 = store[hash]
-        const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0))
+        const bytes = base64ToBytes(base64)
         const blob = new Blob([bytes], { type: mimeType })
 
         const res = await webdavRequest(path, 'PUT', blob, mimeType)
@@ -405,8 +407,10 @@ export async function webdavDownload() {
 
     for (const remoteItem of remoteFavs) {
       // ★ 幽灵复活防护：本地已墓碑标记的项，拒绝从远端恢复
-      if (localTombstones.has(remoteItem.time))
+      if (localTombstones.has(remoteItem.time)) {
+        console.warn(`[Sync] 跳过墓碑项 time=${remoteItem.time} model=${remoteItem.model}`)
         continue
+      }
       // 注意：远端墓碑只用来删除本地数据（上面 for 循环），不应用来过滤远端数据源。
       // 如果 favorites.json 里有一项，即使它的 time 也在 tombstones.json 里，我们仍然信任 favorites.json。
 
@@ -415,6 +419,16 @@ export async function webdavDownload() {
         localMap.set(remoteItem.time, remoteItem)
         itemsToProcess.push(remoteItem)
         hasChanges = true
+      }
+    }
+
+    // 诊断：检查合并后数量是否与远端一致
+    if (localMap.size !== remoteFavs.length) {
+      console.warn(`[Sync] 数量不匹配！远端 ${remoteFavs.length} 条，合并后 ${localMap.size} 条`)
+      for (const item of remoteFavs) {
+        if (!localMap.has(item.time)) {
+          console.warn(`[Sync] 远端项 ${item.time} 未出现在合并结果中`)
+        }
       }
     }
 
@@ -454,7 +468,8 @@ export async function webdavDownload() {
 
     if (hasChanges) {
       await favoriteResults.set(Array.from(localMap.values())
-        .sort((a, b) => b.time - a.time))
+        .sort((a, b) => b.time - a.time)
+        .map(item => ({ ...item })))
     }
 
     // 下载结束：只保留本地主动删除的墓碑（不合并远端墓碑，防止远端矛盾数据污染）

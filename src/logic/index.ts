@@ -274,6 +274,7 @@ async function generateOpenAIContent(
     let fullText = ''
     let finishReason = 'STOP'
     let buffer = ''
+    let streamError: string | null = null
 
     while (true) {
       const { done, value } = await reader.read()
@@ -290,6 +291,10 @@ async function generateOpenAIContent(
           continue
         try {
           const data = JSON.parse(dataStr)
+          if (data.error) {
+            streamError = data.error.message || 'Unknown API error'
+            break
+          }
           const delta = data.choices?.[0]?.delta
           if (delta?.content) {
             fullText += delta.content
@@ -300,24 +305,33 @@ async function generateOpenAIContent(
         }
         catch { /* skip parse error */ }
       }
+      if (streamError)
+        break
     }
     // 处理剩余 buffer
-    if (buffer.trim() && buffer.startsWith('data: ')) {
+    if (!streamError && buffer.trim() && buffer.startsWith('data: ')) {
       const dataStr = buffer.slice(6)
       if (dataStr !== '[DONE]') {
         try {
           const data = JSON.parse(dataStr)
-          const delta = data.choices?.[0]?.delta
-          if (delta?.content) {
-            fullText += delta.content
-            onChunk(delta.content)
+          if (data.error) {
+            streamError = data.error.message || 'Unknown API error'
           }
-          if (data.choices?.[0]?.finish_reason)
-            finishReason = data.choices[0].finish_reason
+          else {
+            const delta = data.choices?.[0]?.delta
+            if (delta?.content) {
+              fullText += delta.content
+              onChunk(delta.content)
+            }
+            if (data.choices?.[0]?.finish_reason)
+              finishReason = data.choices[0].finish_reason
+          }
         }
         catch { /* skip */ }
       }
     }
+    if (streamError)
+      throw new Error(streamError)
     return {
       text: fullText,
       candidates: [{ finishReason: finishReason === 'content_filter' ? 'PROHIBITED_CONTENT' : 'STOP' }],
@@ -498,9 +512,13 @@ export function fileToBase64(file: File): Promise<string> {
   })
 }
 
+export function base64ToBytes(base64: string): Uint8Array {
+  return Uint8Array.from(atob(base64), c => c.charCodeAt(0))
+}
+
 export async function computeImageHash(base64: string): Promise<string> {
-  const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0))
-  const hashBuffer = await crypto.subtle.digest('SHA-256', bytes)
+  const bytes = base64ToBytes(base64)
+  const hashBuffer = await crypto.subtle.digest('SHA-256', bytes as BufferSource)
   const hashArray = Array.from(new Uint8Array(hashBuffer))
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 16)
 }

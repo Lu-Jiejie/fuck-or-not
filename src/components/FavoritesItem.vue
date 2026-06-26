@@ -2,7 +2,7 @@
 import type { FavoriteResult } from '~/types'
 import { computed, ref } from 'vue'
 import MarkdownRenderer from '~/components/MarkdownRenderer.vue'
-import { getImageByHash, getPromptById } from '~/logic'
+import { base64ToBytes, getImageByHash, getPromptById } from '~/logic'
 
 const props = defineProps<{
   item: FavoriteResult
@@ -187,7 +187,7 @@ function downloadImage() {
     return
   const ext = mimeType?.split('/')[1] || 'png'
   const filename = `${props.item.imageHash}.${ext}`
-  const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0))
+  const bytes = base64ToBytes(base64)
   const blob = new Blob([bytes], { type: mimeType })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
