@@ -6,6 +6,7 @@ import ImageUploader from '~/components/ImageUploader.vue'
 import MarkdownRenderer from '~/components/MarkdownRenderer.vue'
 import Select from '~/components/Select.vue'
 import { useAnalyse } from '~/composables/useAnalyse'
+import { version } from '../../package.json'
 
 defineOptions({
   name: 'IndexPage',
@@ -59,8 +60,11 @@ onBeforeRouteLeave(() => {
 
 <template>
   <div mb-6 text-left px-1>
-    <h1 text-3xl font-bold>
+    <h1 text-3xl font-bold flex="~ items-center" gap-2>
       Fuck or Not
+      <span text-xs font-mono font-normal class="bg-emerald-500/10" px-2 py-0.5 rounded-full text-emerald-700 dark:text-emerald-400 border="~ emerald-500/20 dark:emerald-400/20">
+        v{{ version }}
+      </span>
     </h1>
     <p text-sm op-50 mt-1>
       上还是不上？
