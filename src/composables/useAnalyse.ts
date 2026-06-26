@@ -1,8 +1,7 @@
 import type { AIProvider, FavoriteResult, ModelOption } from '~/types'
 import { useStorage } from '@vueuse/core'
-import { useIDBKeyval } from '@vueuse/integrations/useIDBKeyval'
 import { computed, ref, watch } from 'vue'
-import { addAdditionalPreset, additionalPromptPresets, chatgptApiKey, customPrompts, fileToBase64, generateContent, getPromptById, getProviderModels, googleApiKey, grokApiKey, modelOptions, removeAdditionalPreset, saveImage } from '~/logic'
+import { addAdditionalPreset, additionalPromptPresets, chatgptApiKey, customPrompts, favoriteResults, fileToBase64, generateContent, getPromptById, getProviderModels, googleApiKey, grokApiKey, modelOptions, removeAdditionalPreset, saveImage } from '~/logic'
 
 export function useAnalyse() {
   const image = ref<File | null>(null)
@@ -21,7 +20,6 @@ export function useAnalyse() {
   const isEditingResult = ref(false)
   const editedResultText = ref('')
 
-  const favoriteResults = useIDBKeyval('favorite-results', [] as FavoriteResult[])
   const lastFavoriteResult = ref<FavoriteResult | null>(null)
 
   // 当提供商改变时，自动选择该提供商的第一个模型
@@ -296,6 +294,8 @@ export function useAnalyse() {
       prompt: pending.prompt ?? '',
       additionalPrompt: pending.additionalPrompt ?? '',
     }
+    if (!favoriteResults.data.value)
+      favoriteResults.data.value = []
     favoriteResults.data.value.unshift(item)
   }
 

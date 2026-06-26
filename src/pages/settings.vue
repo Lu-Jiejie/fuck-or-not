@@ -1,20 +1,15 @@
 <script setup lang="ts">
 import type { AIProvider } from '~/types'
 import { useStorage } from '@vueuse/core'
-import { useIDBKeyval } from '@vueuse/integrations/useIDBKeyval'
 import JSZip from 'jszip'
 import Sortable from 'sortablejs'
-import { nextTick, onMounted, ref } from 'vue'
+import { nextTick, onMounted, ref, watch } from 'vue'
 import Input from '~/components/Input.vue'
 import Textarea from '~/components/Textarea.vue'
 import { webdavAction, webdavDownload, webdavPassword, webdavProgress, webdavStatus, webdavSyncing, webdavUpload, webdavUrl, webdavUsername } from '~/composables/useWebDAV'
-import { additionalPromptPresets, addPrompt, addProviderModel, chatgptApiKey, chatgptApiUrl, chatgptModels, customPrompts, fetchModelsFromAPI, geminiApiUrl, geminiModels, grokApiKey, grokApiUrl, grokModels, removePrompt, removeProviderModel, resetPrompts, resetProviderModels, updatePrompt, updateProviderModel } from '~/logic'
+import { additionalPromptPresets, addPrompt, addProviderModel, chatgptApiKey, chatgptApiUrl, chatgptModels, customPrompts, favoriteResults, fetchModelsFromAPI, geminiApiUrl, geminiModels, grokApiKey, grokApiUrl, grokModels, imageStore, removePrompt, removeProviderModel, resetPrompts, resetProviderModels, updatePrompt, updateProviderModel } from '~/logic'
 
 const googleApiKey = useStorage('google-api-key', '')
-
-// 用于访问 IndexedDB 中的图片和收藏结果
-const imageStore = useIDBKeyval<Record<string, string>>('favorite-images', {})
-const favoriteResults = useIDBKeyval('favorite-results', [] as any[])
 
 // Prompt 编辑状态
 const editingPromptId = ref<string | null>(null)
@@ -284,6 +279,20 @@ function onImportSettingsClick() {
   settingsFileInputRef.value?.click()
 }
 
+/** 等待 useIDBKeyval 初始化完成，防止异步读取覆盖刚写入的数据 */
+async function waitForTrue(ref: { value: boolean }): Promise<void> {
+  if (ref.value)
+    return
+  return new Promise((resolve) => {
+    const stop = watch(ref, (val) => {
+      if (val) {
+        stop()
+        resolve()
+      }
+    }, { flush: 'sync' })
+  })
+}
+
 async function onImportSettingsFile(event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
@@ -347,8 +356,11 @@ async function onImportSettingsFile(event: Event) {
 
         console.log('[Import] Total images imported:', Object.keys(newImages).filter(k => !k.endsWith(':mime')).length)
 
-        // 合并到现有图片存储（不覆盖已存在的）
-        imageStore.data.value = { ...newImages, ...imageStore.data.value }
+        // 等待 useIDBKeyval 初始化完成，防止竞态覆盖
+        await waitForTrue(imageStore.isFinished)
+
+        // 用 set() 确保 IndexedDB 写入完成，防止刷新丢失数据
+        await imageStore.set({ ...newImages, ...imageStore.data.value })
 
         console.log('[Import] ImageStore keys after merge:', Object.keys(imageStore.data.value).filter(k => !k.endsWith(':mime')))
       }
@@ -371,7 +383,11 @@ async function onImportSettingsFile(event: Event) {
             }
           }
 
-          favoriteResults.data.value = favoritesData
+          // 等待 useIDBKeyval 初始化完成，防止竞态覆盖
+          await waitForTrue(favoriteResults.isFinished)
+
+          // 用 set() 确保 IndexedDB 写入完成，防止刷新丢失数据
+          await favoriteResults.set(favoritesData)
           console.log('[Import] Favorites imported successfully')
         }
       }

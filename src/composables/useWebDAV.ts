@@ -1,10 +1,8 @@
 import type { FavoriteResult } from '~/types'
 import { useStorage } from '@vueuse/core'
-// useIDBKeyval must match the same key used in favorites.vue / useAnalyse
-import { useIDBKeyval } from '@vueuse/integrations/useIDBKeyval'
 import { ref } from 'vue'
 
-import { additionalPromptPresets, chatgptApiKey, chatgptApiUrl, chatgptModels, customPrompts, deletedTimestampsStore, geminiApiUrl, geminiModels, grokApiKey, grokApiUrl, grokModels, imageStore, modelOptions } from '~/logic'
+import { additionalPromptPresets, chatgptApiKey, chatgptApiUrl, chatgptModels, customPrompts, deletedTimestampsStore, favoriteResults, geminiApiUrl, geminiModels, grokApiKey, grokApiUrl, grokModels, imageStore, modelOptions } from '~/logic'
 
 export const webdavUrl = useStorage('webdav-url', '')
 export const webdavUsername = useStorage('webdav-username', '')
@@ -17,7 +15,6 @@ const concisePrompt = useStorage('concise-prompt', '')
 const detailedPrompt = useStorage('detailed-prompt', '')
 const novelPrompt = useStorage('novel-prompt', '')
 const oldCustomPrompt = useStorage('custom-prompt', '')
-const favoriteResults = useIDBKeyval<FavoriteResult[] | undefined>('favorite-results', undefined)
 
 export const webdavSyncing = ref(false)
 export const webdavAction = ref<'upload' | 'download' | ''>('')
@@ -219,15 +216,17 @@ async function autoMergeFromRemote() {
       mergedMap.set(item.time, item)
   }
 
-  // 删除远端已墓碑标记的项
-  for (const ts of remoteTombstones)
-    mergedMap.delete(ts)
+  // 删除远端已墓碑标记的项（但信任远端 favorites.json 里的项，防止矛盾数据导致丢失）
+  const remoteFavTimes = new Set(remoteFavs.map(i => i.time))
+  for (const ts of remoteTombstones) {
+    if (!remoteFavTimes.has(ts))
+      mergedMap.delete(ts)
+  }
 
-  // 合并墓碑列表
-  const mergedTombstones = [...new Set([...localTombstones, ...remoteTombstones])]
-
+  // 不合并远端墓碑到本地，只保留本地主动删除且不在合并后收藏中的
+  const finalTimes = new Set(Array.from(mergedMap.values()).map(i => i.time))
   favoriteResults.data.value = Array.from(mergedMap.values()).sort((a, b) => b.time - a.time)
-  deletedTimestampsStore.data.value = mergedTombstones
+  deletedTimestampsStore.data.value = deletedTimestampsStore.data.value.filter(t => !finalTimes.has(t))
 }
 
 export async function webdavUpload() {
@@ -318,13 +317,15 @@ export async function webdavUpload() {
     }
 
     // A: 上传墓碑标记 — 明确告知远端哪些项被主动删除了
+    //     过滤掉当前收藏仍引用的时间戳，避免向远端写入矛盾状态
     setProgress('上传墓碑标记...')
-    const localTombstones = deletedTimestampsStore.data.value
-    await webdavPut(`${DIR}/tombstones.json`, JSON.stringify(localTombstones, null, 2))
+    const allItems = favoriteResults.data.value ?? []
+    const currentTimes = new Set(allItems.map(i => i.time))
+    const cleanTombstones = deletedTimestampsStore.data.value.filter(t => !currentTimes.has(t))
+    await webdavPut(`${DIR}/tombstones.json`, JSON.stringify(cleanTombstones, null, 2))
 
     // C: 严格等所有资源（图片）全部上传成功后，最后再写配置，保证原子性
     setProgress('上传收藏列表...')
-    const allItems = favoriteResults.data.value ?? []
     const putRes = await webdavPut(`${DIR}/favorites.json`, JSON.stringify(allItems, null, 2))
 
     // 记录同步状态（ETag和ID基准线）
@@ -417,6 +418,14 @@ export async function webdavDownload() {
     const localMap = new Map(localItems.map(item => [item.time, item]))
     const localTombstones = new Set(deletedTimestampsStore.data.value)
 
+    // 恢复机制：检测墓碑—收藏死锁（本地为空，所有远程项均被墓碑阻塞）
+    // 这通常是因为之前有 bug 的下载把远程墓碑合并进了本地，并非用户主动删除
+    if (!localItems.length && remoteFavs.length > 0 && remoteFavs.every(item => localTombstones.has(item.time))) {
+      console.warn('[Sync] 检测到墓碑死锁：本地为空但全部远程项被墓碑阻塞。清除重叠墓碑以恢复。')
+      for (const item of remoteFavs)
+        localTombstones.delete(item.time)
+    }
+
     // A: 下载远端墓碑标记（远端主动删除了哪些项）
     const remoteTombstoneText = await webdavGet(`${DIR}/tombstones.json`)
     const remoteTombstones = new Set<number>(remoteTombstoneText ? JSON.parse(remoteTombstoneText) : [])
@@ -424,9 +433,11 @@ export async function webdavDownload() {
     let hasChanges = false
     const itemsToProcess: FavoriteResult[] = []
 
-    // 应用远端墓碑：远端已删除的项，本地也要同步删除
+    // 应用远端墓碑：删除本地数据中远端已删除的项
+    // 但信任远端 favorites.json 里的项（防止矛盾数据导致本地丢失）
+    const remoteFavTimes = new Set(remoteFavs.map(i => i.time))
     for (const ts of remoteTombstones) {
-      if (localMap.has(ts)) {
+      if (localMap.has(ts) && !remoteFavTimes.has(ts)) {
         localMap.delete(ts)
         hasChanges = true
       }
@@ -436,9 +447,8 @@ export async function webdavDownload() {
       // ★ 幽灵复活防护：本地已墓碑标记的项，拒绝从远端恢复
       if (localTombstones.has(remoteItem.time))
         continue
-      // 远端已墓碑标记的项，跳过
-      if (remoteTombstones.has(remoteItem.time))
-        continue
+      // 注意：远端墓碑只用来删除本地数据（上面 for 循环），不应用来过滤远端数据源。
+      // 如果 favorites.json 里有一项，即使它的 time 也在 tombstones.json 里，我们仍然信任 favorites.json。
 
       const localItem = localMap.get(remoteItem.time)
       if (!localItem || JSON.stringify(localItem) !== JSON.stringify(remoteItem)) {
@@ -478,18 +488,35 @@ export async function webdavDownload() {
       newImages[hash] = btoa(binary)
       newImages[`${hash}:mime`] = mimeType
     }
-    imageStore.data.value = newImages
+    await imageStore.set(newImages)
 
     if (hasChanges) {
-      favoriteResults.data.value = Array.from(localMap.values())
-        .sort((a, b) => b.time - a.time)
+      await favoriteResults.set(Array.from(localMap.values())
+        .sort((a, b) => b.time - a.time))
     }
 
-    // 合并本地 + 远端墓碑
-    const mergedTombstones = [...new Set([...localTombstones, ...remoteTombstones])]
-    deletedTimestampsStore.data.value = mergedTombstones
+    // 下载结束：只保留本地主动删除的墓碑（不合并远端墓碑，防止远端矛盾数据污染）
+    // 同时移除与当前收藏重叠的时间戳（即使之前有 bug 导致叠加，本次也会自动恢复）
+    const currentFavTimes = new Set((favoriteResults.data.value ?? []).map(i => i.time))
+    deletedTimestampsStore.data.value = deletedTimestampsStore.data.value.filter(t => !currentFavTimes.has(t))
 
-    webdavStatus.value = `下载成功（更新 ${itemsToProcess.length} 条，图片 ${downloaded} 张）`
+    // 本地图片垃圾回收：清理不再被任何收藏引用的图片
+    const finalItems = favoriteResults.data.value ?? []
+    const referencedHashes = new Set(finalItems.map(i => i.imageHash))
+    let localDeleted = 0
+    const cleanedStore = { ...imageStore.data.value }
+    for (const key of Object.keys(cleanedStore)) {
+      const hash = key.split(':')[0]
+      if (!referencedHashes.has(hash)) {
+        delete cleanedStore[key]
+        localDeleted++
+      }
+    }
+    if (localDeleted > 0)
+      await imageStore.set(cleanedStore)
+
+    const localGCMsg = localDeleted > 0 ? `，本地清理 ${Math.ceil(localDeleted / 2)} 张图片` : ''
+    webdavStatus.value = `下载成功（更新 ${itemsToProcess.length} 条，图片 ${downloaded} 张${localGCMsg}）`
     setProgress('')
 
     // 更新最后同步基准

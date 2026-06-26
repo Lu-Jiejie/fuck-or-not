@@ -1,18 +1,14 @@
 <script setup lang="ts">
-import type { FavoriteResult } from '~/types'
 import { useStorage } from '@vueuse/core'
-import { useIDBKeyval } from '@vueuse/integrations/useIDBKeyval'
 import { computed, nextTick, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import FavoritesItem from '~/components/FavoritesItem.vue'
 import FavoritesToolbar from '~/components/FavoritesToolbar.vue'
-import { deletedTimestampsStore, deleteImageIfUnused, imageStore, markAsDeleted } from '~/logic'
+import { deletedTimestampsStore, deleteImageIfUnused, favoriteResults, imageStore, markAsDeleted } from '~/logic'
 
 const router = useRouter()
 // const isMobile = useMediaQuery('(max-width: 768px)')
 const isMobile = true
-
-const favoriteResults = useIDBKeyval<FavoriteResult[] | undefined>('favorite-results', undefined)
 const sortOrder = useStorage<'newest' | 'oldest'>('favorites-sort-order', 'newest')
 
 const sortedResults = computed(() => {

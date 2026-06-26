@@ -1,8 +1,5 @@
 import type { FavoriteResult, LegacyFavoriteResult } from '~/types'
-import { useIDBKeyval } from '@vueuse/integrations/useIDBKeyval'
-import { computeImageHash, imageStore } from '~/logic'
-
-const favoriteResults = useIDBKeyval<(FavoriteResult | LegacyFavoriteResult)[] | undefined>('favorite-results', undefined)
+import { computeImageHash, favoriteResults, imageStore } from '~/logic'
 
 function isLegacy(item: FavoriteResult | LegacyFavoriteResult): item is LegacyFavoriteResult {
   return 'image' in item
