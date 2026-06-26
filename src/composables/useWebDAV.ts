@@ -20,6 +20,7 @@ export const webdavSyncing = ref(false)
 export const webdavAction = ref<'upload' | 'download' | ''>('')
 export const webdavStatus = ref('')
 export const webdavProgress = ref({ step: '', current: 0, total: 0 })
+export const webdavProgressPhase = ref<'idle' | 'running' | 'done'>('idle')
 
 const DIR = '/fuck-or-not'
 const DIR_IMAGES = `${DIR}/images`
@@ -237,6 +238,7 @@ export async function webdavUpload() {
   webdavSyncing.value = true
   webdavAction.value = 'upload'
   webdavStatus.value = ''
+  webdavProgressPhase.value = 'running'
   try {
     await ensureDirs()
 
@@ -248,6 +250,36 @@ export async function webdavUpload() {
       if (remoteETag && webdavLastSyncETag.value && remoteETag !== webdavLastSyncETag.value) {
         setProgress('检测到远端变更，自动合并...')
         await autoMergeFromRemote()
+
+        // 合并后补充下载缺失的远程项图片，防止本地裂图
+        setProgress('同步合并后的图片...')
+        const mergedItems = favoriteResults.data.value ?? []
+        const mergedIndexText = await webdavGet(`${DIR}/image-index.json`)
+        const mergedHashSet = new Set<string>(mergedIndexText ? JSON.parse(mergedIndexText) : [])
+        const missingHashes = [...new Set(mergedItems.map(i => i.imageHash))]
+          .filter(h => !imageStore.data.value[h] && mergedHashSet.has(h))
+        if (missingHashes.length > 0) {
+          let mergedDownloaded = 0
+          const mergedStore = { ...imageStore.data.value }
+          for (const hash of missingHashes) {
+            const refItem = mergedItems.find(i => i.imageHash === hash)
+            const mimeType = refItem?.mimeType ?? 'image/png'
+            const ext = mimeToExt(mimeType)
+            const imgRes = await webdavRequest(`${DIR_IMAGES}/${hash}.${ext}`, 'GET')
+            if (!imgRes.ok)
+              continue
+            const blob = await imgRes.blob()
+            const arrayBuffer = await blob.arrayBuffer()
+            const bytes = new Uint8Array(arrayBuffer)
+            let binary = ''
+            for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i])
+            mergedStore[hash] = btoa(binary)
+            mergedStore[`${hash}:mime`] = mimeType
+            mergedDownloaded++
+          }
+          if (mergedDownloaded > 0)
+            await imageStore.set(mergedStore)
+        }
       }
     }
 
@@ -266,7 +298,7 @@ export async function webdavUpload() {
       }
     }
     if (localDeletedKeys > 0) {
-      imageStore.data.value = tempStore
+      await imageStore.set(tempStore)
     }
     const localDeletedImages = Math.ceil(localDeletedKeys / 2)
 
@@ -363,6 +395,7 @@ export async function webdavUpload() {
     if (localDeletedImages > 0)
       msg = msg.replace('）', `，本地清理 ${localDeletedImages} 张）`)
     webdavStatus.value = msg
+    webdavProgressPhase.value = 'done'
     setProgress('')
   }
   catch (e: any) {
@@ -372,6 +405,9 @@ export async function webdavUpload() {
   finally {
     webdavSyncing.value = false
     webdavAction.value = ''
+    setTimeout(() => {
+      webdavProgressPhase.value = 'idle'
+    }, 3000)
   }
 }
 
@@ -383,6 +419,7 @@ export async function webdavDownload() {
   webdavSyncing.value = true
   webdavAction.value = 'download'
   webdavStatus.value = ''
+  webdavProgressPhase.value = 'running'
   try {
     // 下载设置
     setProgress('下载设置...')
@@ -517,6 +554,7 @@ export async function webdavDownload() {
 
     const localGCMsg = localDeleted > 0 ? `，本地清理 ${Math.ceil(localDeleted / 2)} 张图片` : ''
     webdavStatus.value = `下载成功（更新 ${itemsToProcess.length} 条，图片 ${downloaded} 张${localGCMsg}）`
+    webdavProgressPhase.value = 'done'
     setProgress('')
 
     // 更新最后同步基准
@@ -529,5 +567,8 @@ export async function webdavDownload() {
   finally {
     webdavSyncing.value = false
     webdavAction.value = ''
+    setTimeout(() => {
+      webdavProgressPhase.value = 'idle'
+    }, 3000)
   }
 }

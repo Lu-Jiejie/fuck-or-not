@@ -6,7 +6,7 @@ import Sortable from 'sortablejs'
 import { nextTick, onMounted, ref, watch } from 'vue'
 import Input from '~/components/Input.vue'
 import Textarea from '~/components/Textarea.vue'
-import { webdavAction, webdavDownload, webdavPassword, webdavProgress, webdavStatus, webdavSyncing, webdavUpload, webdavUrl, webdavUsername } from '~/composables/useWebDAV'
+import { webdavAction, webdavDownload, webdavPassword, webdavProgress, webdavProgressPhase, webdavStatus, webdavSyncing, webdavUpload, webdavUrl, webdavUsername } from '~/composables/useWebDAV'
 import { additionalPromptPresets, addPrompt, addProviderModel, chatgptApiKey, chatgptApiUrl, chatgptModels, customPrompts, favoriteResults, fetchModelsFromAPI, geminiApiUrl, geminiModels, grokApiKey, grokApiUrl, grokModels, imageStore, removePrompt, removeProviderModel, resetPrompts, resetProviderModels, updatePrompt, updateProviderModel } from '~/logic'
 
 const googleApiKey = useStorage('google-api-key', '')
@@ -1465,14 +1465,15 @@ function getProviderModels(provider: AIProvider): string[] {
     </div>
 
     <!-- 进度条 -->
-    <div v-if="webdavSyncing && webdavProgress.step" mt-4>
+    <div v-if="(webdavSyncing && webdavProgress.step) || webdavProgressPhase === 'done'" mt-4>
       <div flex="~ items-center justify-between" mb-1.5 text-sm op-70>
-        <span>{{ webdavProgress.step }}</span>
+        <span>{{ webdavProgress.step || '同步完成' }}</span>
         <span v-if="webdavProgress.total > 0">{{ webdavProgress.current }} / {{ webdavProgress.total }}</span>
       </div>
       <div w-full h-1.5 rounded-full bg-gray-200 dark:bg-gray-800 overflow-hidden>
         <div
-          h-full rounded-full bg-teal-500 transition-all duration-300
+          h-full rounded-full transition-all duration-500
+          :class="webdavProgressPhase === 'done' ? 'bg-teal-500' : 'bg-amber-500'"
           :style="{ width: webdavProgress.total > 0 ? `${Math.round(webdavProgress.current / webdavProgress.total * 100)}%` : '100%' }"
         />
       </div>
@@ -1524,7 +1525,7 @@ function getProviderModels(provider: AIProvider): string[] {
       </div>
       <div w-full h-1.5 rounded-full bg-gray-200 dark:bg-gray-800 overflow-hidden>
         <div
-          h-full rounded-full bg-teal-500 transition-all duration-300
+          h-full rounded-full bg-amber-500 transition-all duration-300
           :style="{ width: importExportProgress.total > 0 ? `${Math.round(importExportProgress.current / importExportProgress.total * 100)}%` : '100%' }"
         />
       </div>
