@@ -133,6 +133,7 @@ const isAddingProvider = ref(false)
 const newProviderForm = ref<ProviderConfig>({ id: '', name: '', type: 'openai', apiUrl: '', apiKey: '', models: [] })
 const fetchingModelList = ref(false)
 const availableModelList = ref<string[]>([])
+const selectedEditModel = ref('')
 
 function genId() {
   return `prov_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
@@ -189,14 +190,14 @@ function removeProvider(id: string) {
 }
 
 // 模型管理（单个供应商内部）
-function addModelToProvider(providerId: string, modelId: string) {
-  const p = providers.value.find(x => x.id === providerId)
-  if (!p)
-    return
-  if (!p.models.includes(modelId)) {
-    p.models = [...p.models, modelId]
-  }
-}
+// function addModelToProvider(providerId: string, modelId: string) {
+//   const p = providers.value.find(x => x.id === providerId)
+//   if (!p)
+//     return
+//   if (!p.models.includes(modelId)) {
+//     p.models = [...p.models, modelId]
+//   }
+// }
 
 async function handleFetchModels(providerId: string) {
   const p = providers.value.find(x => x.id === providerId)
@@ -206,7 +207,7 @@ async function handleFetchModels(providerId: string) {
   try {
     const models = await fetchModelsFromAPI(p)
     if (models.length === 0) { alert('未找到可用的模型'); return }
-    const newModels = models.filter(m => !p.models.includes(m))
+    const newModels = models.filter(m => !editingProviderForm.value.models.includes(m))
     availableModelList.value = newModels
     if (newModels.length === 0)
       alert('所有模型已存在')
@@ -222,6 +223,7 @@ async function handleFetchModels(providerId: string) {
 // 为新增供应商表单获取模型（尚未保存到 providers）
 const fetchingModelListForNew = ref(false)
 const availableModelListForNew = ref<string[]>([])
+const selectedNewModel = ref('')
 
 async function handleFetchModelsForNew() {
   const form = newProviderForm.value
@@ -246,8 +248,27 @@ async function handleFetchModelsForNew() {
 function addSelectedModel(providerId: string, modelId: string) {
   if (!modelId)
     return
-  addModelToProvider(providerId, modelId)
+  const form = editingProviderForm.value
+  if (!form.models.includes(modelId)) {
+    form.models = [...form.models, modelId]
+  }
   availableModelList.value = availableModelList.value.filter(m => m !== modelId)
+  selectedEditModel.value = ''
+}
+
+function addSelectedModelForNew(modelId: string) {
+  if (!modelId)
+    return
+  const form = newProviderForm.value
+  if (!form.models.includes(modelId)) {
+    form.models = [...form.models, modelId]
+  }
+  availableModelListForNew.value = availableModelListForNew.value.filter(m => m !== modelId)
+  selectedNewModel.value = ''
+}
+
+function trimUrlTrailingSlash(url: string) {
+  return url.replace(/\/+$/, '')
 }
 
 const settingsFileInputRef = ref<HTMLInputElement | null>(null)
@@ -601,7 +622,7 @@ async function importSettings(data: any) {
             </div>
             <div>
               <span label ml-0.5>API 地址</span>
-              <Input v-model="editingProviderForm.apiUrl" type="text" placeholder="https://api.openai.com" />
+              <Input v-model="editingProviderForm.apiUrl" type="text" placeholder="https://api.openai.com" @blur="editingProviderForm.apiUrl = trimUrlTrailingSlash(editingProviderForm.apiUrl)" />
             </div>
             <div>
               <span label ml-0.5>API 密钥</span>
@@ -620,7 +641,7 @@ async function importSettings(data: any) {
               </div>
               <div v-if="availableModelList.length > 0" mb-2 flex="~ gap-2">
                 <select
-                  v-model="editingProviderForm.models[editingProviderForm.models.length]" font-mono text-sm flex-1
+                  v-model="selectedEditModel" font-mono text-sm flex-1
                   p="x-4 y-2" bg="transparent" border="~ rounded base hover-base focus-base"
                   outline="none active:none" cursor-pointer class="select-with-arrow"
                 >
@@ -635,7 +656,7 @@ async function importSettings(data: any) {
                   p-2 rounded-lg cursor-pointer transition-colors duration-200
                   class="bg-teal-600 hover:bg-teal-700 text-white h-10 w-10"
                   flex items-center justify-center flex-shrink-0
-                  @click="addSelectedModel(prov.id, (editingProviderForm.models.at(-1) || ''))"
+                  @click="addSelectedModel(prov.id, selectedEditModel)"
                 >
                   <div i-carbon-add text-xl />
                 </button>
@@ -753,7 +774,7 @@ async function importSettings(data: any) {
           </div>
           <div>
             <span label ml-0.5>API 地址</span>
-            <Input v-model="newProviderForm.apiUrl" type="text" placeholder="https://api.openai.com" />
+            <Input v-model="newProviderForm.apiUrl" type="text" placeholder="https://api.openai.com" @blur="newProviderForm.apiUrl = trimUrlTrailingSlash(newProviderForm.apiUrl)" />
           </div>
           <div>
             <span label ml-0.5>API 密钥</span>
@@ -772,7 +793,7 @@ async function importSettings(data: any) {
             </div>
             <div v-if="availableModelListForNew.length > 0" mb-2 flex="~ gap-2">
               <select
-                v-model="newProviderForm.models[newProviderForm.models.length]" font-mono text-sm flex-1
+                v-model="selectedNewModel" font-mono text-sm flex-1
                 p="x-4 y-2" bg="transparent" border="~ rounded base hover-base focus-base"
                 outline="none active:none" cursor-pointer class="select-with-arrow"
               >
@@ -787,7 +808,7 @@ async function importSettings(data: any) {
                 p-2 rounded-lg cursor-pointer transition-colors duration-200
                 class="bg-teal-600 hover:bg-teal-700 text-white h-10 w-10"
                 flex items-center justify-center flex-shrink-0
-                @click="newProviderForm.models = [...new Set([...newProviderForm.models.filter(Boolean), ...availableModelListForNew])]; availableModelListForNew = []"
+                @click="addSelectedModelForNew(selectedNewModel)"
               >
                 <div i-carbon-add text-xl />
               </button>
