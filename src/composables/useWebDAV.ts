@@ -393,7 +393,16 @@ export async function webdavUpload() {
     setProgress('更新图片索引...')
     await webdavPut(`${DIR}/image-index.json`, JSON.stringify([...remoteHashes]))
 
+    const urlItemCount = allItems.filter(i => i.imageUrl).length
+    const fileItemCount = allItems.length - urlItemCount
+    const imageParts: string[] = []
+    if (fileItemCount > 0)
+      imageParts.push(`图片文件 ${fileItemCount} 张`)
+    if (urlItemCount > 0)
+      imageParts.push(`外部链接 ${urlItemCount} 张`)
     let msg = `上传成功（新增 ${uploaded} 张，跳过 ${skipped} 张，远端清理 ${deletedCount} 张）`
+    if (imageParts.length > 0)
+      msg = msg.replace('）', `，${imageParts.join('，')}）`)
     if (localDeletedImages > 0)
       msg = msg.replace('）', `，本地清理 ${localDeletedImages} 张）`)
     webdavStatus.value = msg
@@ -557,7 +566,15 @@ export async function webdavDownload() {
       await imageStore.set(cleanedStore)
 
     const localGCMsg = localDeleted > 0 ? `，本地清理 ${Math.ceil(localDeleted / 2)} 张图片` : ''
-    webdavStatus.value = `下载成功（更新 ${itemsToProcess.length} 条，图片 ${downloaded} 张${localGCMsg}）`
+    const urlItemCount = itemsToProcess.filter(i => i.imageUrl).length
+    const fileItemCount = itemsToProcess.length - urlItemCount
+    const parts: string[] = []
+    if (fileItemCount > 0)
+      parts.push(`图片文件 ${fileItemCount} 张`)
+    if (urlItemCount > 0)
+      parts.push(`外部链接 ${urlItemCount} 张`)
+    const imageSummary = parts.length > 0 ? `，${parts.join('，')}` : ''
+    webdavStatus.value = `下载成功（更新 ${itemsToProcess.length} 条${imageSummary}${localGCMsg}）`
     webdavProgressPhase.value = 'done'
     setProgress('')
 
