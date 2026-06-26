@@ -4,7 +4,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import FavoritesItem from '~/components/FavoritesItem.vue'
 import FavoritesToolbar from '~/components/FavoritesToolbar.vue'
-import { deletedTimestampsStore, deleteImageIfUnused, favoriteResults, imageStore, markAsDeleted } from '~/logic'
+import { computeStringHash, deletedTimestampsStore, deleteImageIfUnused, favoriteResults, imageStore, markAsDeleted } from '~/logic'
 
 const router = useRouter()
 // const isMobile = useMediaQuery('(max-width: 768px)')
@@ -70,10 +70,34 @@ function onUpdate(time: number, result: string) {
   }
 }
 
-function onUpdateImageUrl(time: number, imageUrl: string) {
-  const idx = favoriteResults.data.value?.findIndex(item => item.time === time) ?? -1
-  if (idx !== -1) {
-    favoriteResults.data.value![idx].imageUrl = imageUrl
+async function onUpdateImageUrl(time: number, imageUrl: string) {
+  const items = favoriteResults.data.value
+  if (!items)
+    return
+  const idx = items.findIndex(item => item.time === time)
+  if (idx === -1)
+    return
+
+  const item = items[idx]
+  const oldHash = item.imageHash
+  const newHash = await computeStringHash(imageUrl)
+
+  if (item.imageUrl) {
+    // 已有外部链接 -> 编辑 URL：只更新这一项
+    item.imageUrl = imageUrl
+    item.imageHash = newHash
+  }
+  else {
+    // 文件 -> URL 迁移：所有引用同一张图片的收藏项同时迁移
+    for (const fav of items) {
+      if (fav.imageHash === oldHash && !fav.imageUrl) {
+        fav.imageUrl = imageUrl
+        fav.imageHash = newHash
+      }
+    }
+    // 迁移后旧 hash 不再被引用，清理 IndexedDB 中的 base64
+    const usedHashes = new Set(items.map(i => i.imageHash))
+    deleteImageIfUnused(oldHash, usedHashes)
   }
 }
 

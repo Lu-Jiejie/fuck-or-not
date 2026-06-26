@@ -69,6 +69,9 @@ const editedText = ref('')
 // 链接编辑
 const isEditingUrl = ref(false)
 const editedUrl = ref('')
+const previewUrl = ref('')
+const previewLoading = ref(false)
+const previewError = ref(false)
 
 function startEdit() {
   editedText.value = props.item.result
@@ -89,6 +92,9 @@ function cancelEdit() {
 function startEditUrl() {
   editedUrl.value = props.item.imageUrl ?? ''
   isEditingUrl.value = true
+  previewUrl.value = ''
+  previewLoading.value = false
+  previewError.value = false
 }
 
 function confirmEditUrl() {
@@ -113,6 +119,37 @@ function confirmEditUrl() {
 
 function cancelEditUrl() {
   isEditingUrl.value = false
+  previewUrl.value = ''
+  previewLoading.value = false
+  previewError.value = false
+}
+
+function preview() {
+  const url = editedUrl.value.trim()
+  if (!url)
+    return
+  try {
+    // eslint-disable-next-line no-new
+    new URL(url)
+  }
+  catch {
+    return
+  }
+
+  previewLoading.value = true
+  previewError.value = false
+  previewUrl.value = ''
+
+  const img = new Image()
+  img.onload = () => {
+    previewUrl.value = url
+    previewLoading.value = false
+  }
+  img.onerror = () => {
+    previewError.value = true
+    previewLoading.value = false
+  }
+  img.src = url
 }
 
 async function copyText(key: CopyKey, text: string) {
@@ -241,7 +278,6 @@ function downloadImage() {
             下载图片
           </button>
           <button
-            v-if="props.item.imageUrl"
             type="button" title="编辑图片链接"
             flex="~ items-center gap-1" px-3 py-1.5 rounded-md text-xs text-white font-bold
             bg-teal-600 hover:bg-teal-500
@@ -302,6 +338,15 @@ function downloadImage() {
         <button
           type="button"
           text-xs text-white font-bold rounded-md px-4 py-2
+          bg-amber-600 hover:bg-amber-700
+          cursor-pointer transition-colors duration-200
+          @click="preview"
+        >
+          预览
+        </button>
+        <button
+          type="button"
+          text-xs text-white font-bold rounded-md px-4 py-2
           bg-teal-600 hover:bg-teal-700
           cursor-pointer transition-colors duration-200
           @click="confirmEditUrl"
@@ -317,6 +362,22 @@ function downloadImage() {
         >
           取消
         </button>
+      </div>
+      <div v-if="previewLoading" text-center text-xs opacity-60 py-4>
+        加载中...
+      </div>
+      <div
+        v-if="previewUrl"
+        mt-2 border="~ base rounded" p-2
+      >
+        <img
+          :src="previewUrl"
+          class="preview"
+          rounded max-h-60 max-w-full object-contain mx-auto
+        >
+      </div>
+      <div v-if="previewError" text-center text-xs text-red-500 py-4>
+        无法加载图片，请检查链接是否正确
       </div>
     </div>
     <div
