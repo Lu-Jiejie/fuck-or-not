@@ -1210,10 +1210,19 @@ export async function computeImageHash(base64: string): Promise<string> {
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 16)
 }
 
+export async function computeStringHash(str: string): Promise<string> {
+  const encoder = new TextEncoder()
+  const data = encoder.encode(str)
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data)
+  const hashArray = Array.from(new Uint8Array(hashBuffer))
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 16)
+}
+
 export const imageStore = useIDBKeyval<Record<string, string>>('favorite-images', {}, { shallow: true })
 
 // 统一收藏结果存储，各处共用同一个 Ref 实例以保证跨组件响应式
-export const favoriteResults = useIDBKeyval<FavoriteResult[] | undefined>('favorite-results', undefined, { shallow: true })
+// 不使用 shallow，因为代码中有 .unshift() 等数组原地修改模式
+export const favoriteResults = useIDBKeyval<FavoriteResult[] | undefined>('favorite-results', undefined)
 
 export async function saveImage(base64: string, mimeType: string): Promise<string> {
   const hash = await computeImageHash(base64)

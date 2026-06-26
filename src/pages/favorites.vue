@@ -70,6 +70,13 @@ function onUpdate(time: number, result: string) {
   }
 }
 
+function onUpdateImageUrl(time: number, imageUrl: string) {
+  const idx = favoriteResults.data.value?.findIndex(item => item.time === time) ?? -1
+  if (idx !== -1) {
+    favoriteResults.data.value![idx].imageUrl = imageUrl
+  }
+}
+
 function onDeleteAll() {
   if (!confirm('确定要删除所有收藏吗？')) {
     return
@@ -144,6 +151,7 @@ function navigateToSettings() {
             :is-mobile="isMobile"
             @delete="onDelete(item.time)"
             @update="(result: string) => onUpdate(item.time, result)"
+            @update-image-url="(imageUrl: string) => onUpdateImageUrl(item.time, imageUrl)"
           />
         </TransitionGroup>
 

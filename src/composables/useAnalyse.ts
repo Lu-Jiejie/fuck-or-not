@@ -1,10 +1,10 @@
 import type { AIProvider, FavoriteResult, ModelOption } from '~/types'
 import { useStorage } from '@vueuse/core'
 import { computed, ref, watch } from 'vue'
-import { addAdditionalPreset, additionalPromptPresets, chatgptApiKey, customPrompts, favoriteResults, fileToBase64, generateContent, getPromptById, getProviderModels, googleApiKey, grokApiKey, modelOptions, removeAdditionalPreset, saveImage } from '~/logic'
+import { addAdditionalPreset, additionalPromptPresets, chatgptApiKey, computeStringHash, customPrompts, favoriteResults, fileToBase64, generateContent, getPromptById, getProviderModels, googleApiKey, grokApiKey, modelOptions, removeAdditionalPreset, saveImage } from '~/logic'
 
 export function useAnalyse() {
-  const image = ref<File | null>(null)
+  const image = ref<File | string | null>(null)
   const base64Image = ref<string | null>(null)
 
   const selectedProvider = useStorage<AIProvider>('selected-provider', 'Gemini')
@@ -59,7 +59,11 @@ export function useAnalyse() {
   })
 
   const analyseButtonDisabled = computed(() => {
-    return !selectedModelId.value || !selectedPromptId.value || !image.value
+    if (!selectedModelId.value || !selectedPromptId.value)
+      return true
+    if (typeof image.value === 'string')
+      return !image.value
+    return !image.value
   })
 
   const providerSelectOptions = computed(() => [
@@ -165,7 +169,21 @@ export function useAnalyse() {
       prompt: selectedPrompt.value?.content ?? '',
       additionalPrompt: additionalPrompt.value.trim(),
       _pendingBase64: '',
+      _sourceUrl: undefined,
     } as any
+  }
+
+  async function urlToBase64(url: string): Promise<{ base64: string, mimeType: string }> {
+    const res = await fetch(url)
+    if (!res.ok)
+      throw new Error(`无法获取图片: ${res.status} ${res.statusText}`)
+    const blob = await res.blob()
+    const mimeType = blob.type || 'image/jpeg'
+    const arrayBuffer = await blob.arrayBuffer()
+    const bytes = new Uint8Array(arrayBuffer)
+    let binary = ''
+    for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i])
+    return { base64: btoa(binary), mimeType }
   }
 
   async function handleAnalyseButtonClick() {
@@ -190,10 +208,10 @@ export function useAnalyse() {
     }
 
     if (!image.value) {
-      errorMsg.value = '请先上传图片。'
+      errorMsg.value = '请先上传图片或输入图片链接。'
       return
     }
-    if (image.value.size > 20 * 1024 * 1024) {
+    if (image.value instanceof File && image.value.size > 20 * 1024 * 1024) {
       errorMsg.value = '图片大小不能超过 20MB，请选择较小的图片。'
       return
     }
@@ -215,12 +233,23 @@ export function useAnalyse() {
         finalPrompt = `${finalPrompt}\n\n用户补充说明：${additionalPrompt.value.trim()}`
       }
 
-      base64Image.value = await fileToBase64(image.value!)
+      let sourceUrl: string | undefined
+      let mimeType: string
+      if (typeof image.value === 'string') {
+        sourceUrl = image.value
+        const result = await urlToBase64(sourceUrl)
+        base64Image.value = result.base64
+        mimeType = result.mimeType
+      }
+      else {
+        base64Image.value = await fileToBase64(image.value!)
+        mimeType = image.value!.type
+      }
       const contents: Parameters<typeof generateContent>[1] = [
         {
           inlineData: {
             data: base64Image.value,
-            mimeType: image.value!.type,
+            mimeType,
           },
         },
         {
@@ -256,12 +285,13 @@ export function useAnalyse() {
           model: selectedModel.value.id,
           mode: selectedPromptId.value,
           imageHash: '',
-          mimeType: image.value!.type,
+          mimeType,
           time: Date.now(),
           result: response.text!,
           prompt: selectedPrompt.value?.content ?? '',
           additionalPrompt: additionalPrompt.value.trim(),
           _pendingBase64: lastImage,
+          _sourceUrl: sourceUrl,
         } as any
       }
     }
@@ -283,17 +313,32 @@ export function useAnalyse() {
     const pending = lastFavoriteResult.value as any
     const base64 = pending._pendingBase64 as string
     const mimeType = pending.mimeType as string
-    const hash = await saveImage(base64, mimeType)
+    const sourceUrl = pending._sourceUrl as string | undefined
+
+    let hash: string
     const item: FavoriteResult = {
       model: pending.model,
       mode: pending.mode,
-      imageHash: hash,
+      imageHash: '',
       mimeType,
       time: pending.time,
       result: pending.result,
       prompt: pending.prompt ?? '',
       additionalPrompt: pending.additionalPrompt ?? '',
     }
+
+    if (sourceUrl) {
+      // URL 图片：不存入 imageStore，保留链接
+      hash = await computeStringHash(sourceUrl)
+      item.imageHash = hash
+      item.imageUrl = sourceUrl
+    }
+    else {
+      // 文件上传：存入 imageStore
+      hash = await saveImage(base64, mimeType)
+      item.imageHash = hash
+    }
+
     if (!favoriteResults.data.value)
       favoriteResults.data.value = []
     favoriteResults.data.value.unshift(item)

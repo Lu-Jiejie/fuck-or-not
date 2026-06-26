@@ -256,7 +256,9 @@ export async function webdavUpload() {
         const mergedItems = favoriteResults.data.value ?? []
         const mergedIndexText = await webdavGet(`${DIR}/image-index.json`)
         const mergedHashSet = new Set<string>(mergedIndexText ? JSON.parse(mergedIndexText) : [])
-        const missingHashes = [...new Set(mergedItems.map(i => i.imageHash))]
+        const missingHashes = mergedItems
+          .filter(i => !i.imageUrl)
+          .map(i => i.imageHash)
           .filter(h => !imageStore.data.value[h] && mergedHashSet.has(h))
         if (missingHashes.length > 0) {
           let mergedDownloaded = 0
@@ -287,7 +289,7 @@ export async function webdavUpload() {
     // 本地垃圾回收：清理本地缓存中不再被收藏引用的图片
     setProgress('清理本地缓存图片...')
     const allLocalItems = favoriteResults.data.value ?? []
-    const referencedLocal = new Set(allLocalItems.map(i => i.imageHash))
+    const referencedLocal = new Set(allLocalItems.filter(i => !i.imageUrl).map(i => i.imageHash))
     const tempStore = { ...imageStore.data.value }
     let localDeletedKeys = 0
     for (const key of Object.keys(tempStore)) {
@@ -366,7 +368,7 @@ export async function webdavUpload() {
 
     // 垃圾回收：清理远端已不再被任何收藏项引用的图片
     setProgress('清理远端闲置图片...')
-    const referencedHashes = new Set(allItems.map(i => i.imageHash))
+    const referencedHashes = new Set(allItems.filter(i => !i.imageUrl).map(i => i.imageHash))
     const orphanHashes = [...remoteHashes].filter(h => !referencedHashes.has(h))
 
     let deletedCount = 0
@@ -500,9 +502,11 @@ export async function webdavDownload() {
     const remoteHashList: string[] = remoteIndexText ? JSON.parse(remoteIndexText) : []
     const remoteHashSet = new Set(remoteHashList)
 
-    // C: 下载缺失图片
+    // C: 下载缺失图片（跳过 imageUrl 图片，不下载到本地）
     const localStore = imageStore.data.value
-    const hashesToDownload = [...new Set(itemsToProcess.map(i => i.imageHash))]
+    const hashesToDownload = itemsToProcess
+      .filter(i => !i.imageUrl)
+      .map(i => i.imageHash)
       .filter(h => !localStore[h] && remoteHashSet.has(h))
 
     let downloaded = 0
@@ -539,7 +543,7 @@ export async function webdavDownload() {
 
     // 本地图片垃圾回收：清理不再被任何收藏引用的图片
     const finalItems = favoriteResults.data.value ?? []
-    const referencedHashes = new Set(finalItems.map(i => i.imageHash))
+    const referencedHashes = new Set(finalItems.filter(i => !i.imageUrl).map(i => i.imageHash))
     let localDeleted = 0
     const cleanedStore = { ...imageStore.data.value }
     for (const key of Object.keys(cleanedStore)) {

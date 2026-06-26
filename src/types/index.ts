@@ -35,6 +35,8 @@ export interface FavoriteResult {
   result: string
   prompt?: string
   additionalPrompt?: string
+  /** 网络图片链接：设置此项时表示图片来自 URL，不存入 imageStore */
+  imageUrl?: string
 }
 
 // 旧版数据结构，用于迁移兼容

@@ -13,6 +13,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   delete: []
   update: [result: string]
+  updateImageUrl: [imageUrl: string]
 }>()
 
 const contentExpanded = ref(false)
@@ -44,6 +45,8 @@ const modeLabel = computed(() => {
 
 const imageData = computed(() => getImageByHash(props.item.imageHash))
 const imageSrc = computed(() => {
+  if (props.item.imageUrl)
+    return props.item.imageUrl
   const { base64, mimeType } = imageData.value
   if (!base64)
     return ''
@@ -63,6 +66,10 @@ let copiedTimer: ReturnType<typeof setTimeout> | null = null
 const isEditing = ref(false)
 const editedText = ref('')
 
+// 链接编辑
+const isEditingUrl = ref(false)
+const editedUrl = ref('')
+
 function startEdit() {
   editedText.value = props.item.result
   isEditing.value = true
@@ -77,6 +84,35 @@ function confirmEdit() {
 
 function cancelEdit() {
   isEditing.value = false
+}
+
+function startEditUrl() {
+  editedUrl.value = props.item.imageUrl ?? ''
+  isEditingUrl.value = true
+}
+
+function confirmEditUrl() {
+  const url = editedUrl.value.trim()
+  if (!url) {
+    editedUrl.value = props.item.imageUrl ?? ''
+    isEditingUrl.value = false
+    return
+  }
+  try {
+    // eslint-disable-next-line no-new
+    new URL(url)
+  }
+  catch {
+    editedUrl.value = props.item.imageUrl ?? ''
+    isEditingUrl.value = false
+    return
+  }
+  emit('updateImageUrl', url)
+  isEditingUrl.value = false
+}
+
+function cancelEditUrl() {
+  isEditingUrl.value = false
 }
 
 async function copyText(key: CopyKey, text: string) {
@@ -105,6 +141,10 @@ async function copyText(key: CopyKey, text: string) {
 }
 
 function downloadImage() {
+  if (props.item.imageUrl) {
+    window.open(props.item.imageUrl, '_blank')
+    return
+  }
   const { base64, mimeType } = imageData.value
   if (!base64)
     return
@@ -133,6 +173,22 @@ function downloadImage() {
         <span font-bold truncate min-w-0>{{ props.item.model }}</span>
         <span capitalize truncate min-w-0>{{ modeLabel }}</span>
         <span text-xs truncate min-w-0>{{ formatTime(props.item.time) }}</span>
+        <span
+          v-if="props.item.imageUrl"
+          px-1 py-0 rounded text-2xs font-medium
+          bg-yellow-100 text-yellow-800
+          dark:bg-yellow-900 dark:text-yellow-200
+        >
+          外部链接
+        </span>
+        <span
+          v-else
+          px-1 py-0 rounded text-2xs font-medium
+          bg-teal-100 text-teal-800
+          dark:bg-teal-900 dark:text-teal-200
+        >
+          图片文件
+        </span>
       </div>
 
       <div flex="~ wrap gap-x-2 gap-y-3" justify-between>
@@ -184,6 +240,17 @@ function downloadImage() {
             <div i-carbon-download />
             下载图片
           </button>
+          <button
+            v-if="props.item.imageUrl"
+            type="button" title="编辑图片链接"
+            flex="~ items-center gap-1" px-3 py-1.5 rounded-md text-xs text-white font-bold
+            bg-teal-600 hover:bg-teal-500
+            cursor-pointer transition-colors duration-200
+            @click="startEditUrl"
+          >
+            <div i-carbon-link />
+            编辑图片链接
+          </button>
         </div>
 
         <!-- 编辑 / 删除按钮组 -->
@@ -214,10 +281,51 @@ function downloadImage() {
     </div>
 
     <div
+      v-if="isEditingUrl"
+      border="~ base rounded"
+      bg="light dark:dark"
+      w-full p-4
+      flex="~ col gap-3"
+    >
+      <input
+        v-model="editedUrl"
+        type="url"
+        placeholder="输入新的图片链接"
+        w-full px-3 py-2 rounded-lg
+        border="~ base focus:teal-600"
+        bg="transparent"
+        outline="none"
+        transition-colors duration-200
+        @keydown.enter="confirmEditUrl"
+      >
+      <div flex="~ justify-end gap-2">
+        <button
+          type="button"
+          text-xs text-white font-bold rounded-md px-4 py-2
+          bg-teal-600 hover:bg-teal-700
+          cursor-pointer transition-colors duration-200
+          @click="confirmEditUrl"
+        >
+          确认链接
+        </button>
+        <button
+          type="button"
+          text-xs text-white font-bold rounded-md px-4 py-2
+          bg-red-400 hover:bg-red-500
+          cursor-pointer transition-colors duration-200
+          @click="cancelEditUrl"
+        >
+          取消
+        </button>
+      </div>
+    </div>
+    <div
+      v-else
       border="~ base rounded"
       bg="light dark:dark"
       w-full min-h-40
       flex items-center justify-center
+      class="relative"
     >
       <img
         :src="imageSrc"
