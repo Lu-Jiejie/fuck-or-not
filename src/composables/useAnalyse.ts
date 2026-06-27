@@ -194,10 +194,11 @@ export function useAnalyse() {
     result.value = ''
 
     try {
-      let finalPrompt = selectedPrompt.value.content || '分析这张图片'
+      const systemInstruction = selectedPrompt.value.content || '分析这张图片'
 
-      if (additionalPrompt.value.trim())
-        finalPrompt = `${finalPrompt}\n\n用户补充说明：${additionalPrompt.value.trim()}`
+      const userText = additionalPrompt.value.trim()
+        ? `用户补充说明：${additionalPrompt.value.trim()}`
+        : ''
 
       let sourceUrl: string | undefined
       let mimeType: string
@@ -213,12 +214,14 @@ export function useAnalyse() {
       }
       const contents: Parameters<typeof generateContent>[1] = [
         { inlineData: { data: base64Image.value, mimeType } },
-        { text: finalPrompt },
       ]
+      if (userText)
+        contents.push({ text: userText })
+
       const response = await generateContent(
         selectedModelId.value,
         contents,
-        finalPrompt,
+        systemInstruction,
         provider,
         (chunk) => {
           result.value += chunk
