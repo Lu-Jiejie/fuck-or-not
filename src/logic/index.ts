@@ -1,7 +1,7 @@
 import type { CustomPrompt, FavoriteResult, GenerationConfig, ProviderConfig } from '~/types'
 import { useDark, useStorage, useToggle } from '@vueuse/core'
 import { useIDBKeyval } from '@vueuse/integrations/useIDBKeyval'
-import { defaultConcisePrompt, defaultDetailedPrompt, defaultNovelPrompt } from './prompts'
+import { defaultDescriptionPrompt, defaultNovelPrompt } from './prompts'
 
 export const isDark = useDark()
 export const toggleDark = useToggle(isDark)
@@ -427,9 +427,8 @@ function buildOpenAIMessages(contents: any, systemInstruction: string): any[] {
 // Prompt 系统
 // ──────────────────────────────────────────────
 export const defaultPrompts: CustomPrompt[] = [
-  { id: 'concise', name: '简洁', content: defaultConcisePrompt },
-  { id: 'detailed', name: '详细', content: defaultDetailedPrompt },
-  { id: 'novel', name: '小说', content: defaultNovelPrompt },
+  { id: 'description', name: '3000字色情描述', content: defaultDescriptionPrompt },
+  { id: 'novel', name: '3000字色情小说', content: defaultNovelPrompt },
 ]
 
 export const customPrompts = useStorage<CustomPrompt[]>('custom-prompts', [])
