@@ -1,4 +1,4 @@
-import type { CustomPrompt, FavoriteResult, ProviderConfig } from '~/types'
+import type { CustomPrompt, FavoriteResult, GenerationConfig, ProviderConfig } from '~/types'
 import { useDark, useStorage, useToggle } from '@vueuse/core'
 import { useIDBKeyval } from '@vueuse/integrations/useIDBKeyval'
 import { defaultConcisePrompt, defaultDetailedPrompt, defaultNovelPrompt } from './prompts'
@@ -148,6 +148,34 @@ function normalizeApiUrl(url: string, defaultUrl: string): string {
   return url
 }
 
+function buildGeminiGenerationConfig(config?: GenerationConfig): Record<string, any> {
+  const genConfig: Record<string, any> = { temperature: 0.7 }
+  if (!config)
+    return genConfig
+  if (config.temperature !== undefined)
+    genConfig.temperature = config.temperature
+  if (config.maxTokens !== undefined)
+    genConfig.maxOutputTokens = config.maxTokens
+  if (config.topP !== undefined)
+    genConfig.topP = config.topP
+  if (config.topK !== undefined)
+    genConfig.topK = config.topK
+  return genConfig
+}
+
+function buildOpenAIGenerationConfig(config?: GenerationConfig): Record<string, any> {
+  const genConfig: Record<string, any> = {}
+  if (!config)
+    return genConfig
+  if (config.temperature !== undefined)
+    genConfig.temperature = config.temperature
+  if (config.maxTokens !== undefined)
+    genConfig.max_tokens = config.maxTokens
+  if (config.topP !== undefined)
+    genConfig.top_p = config.topP
+  return genConfig
+}
+
 // ──────────────────────────────────────────────
 // generateContent
 // ──────────────────────────────────────────────
@@ -195,7 +223,7 @@ async function generateGeminiContent(
             return content
           })
         : [contents],
-      generationConfig: { temperature: 0.7 },
+      generationConfig: buildGeminiGenerationConfig(provider.generationConfig),
       safetySettings: [
         { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
         { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
@@ -229,7 +257,7 @@ async function generateGeminiContent(
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-      body: JSON.stringify({ model, messages, temperature: 0.7 }),
+      body: JSON.stringify({ model, messages, temperature: 0.7, ...buildOpenAIGenerationConfig(provider.generationConfig) }),
     })
     if (!response.ok)
       throw new Error(`Gemini (OpenAI format) API error (${response.status}): ${await response.text()}`)
@@ -261,7 +289,7 @@ async function generateOpenAIContent(
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-      body: JSON.stringify({ model, messages, temperature: 0.7, stream: true }),
+      body: JSON.stringify({ model, messages, temperature: 0.7, stream: true, ...buildOpenAIGenerationConfig(provider.generationConfig) }),
     })
     if (!response.ok)
       throw new Error(`API error (${response.status}): ${await response.text()}`)
@@ -342,7 +370,7 @@ async function generateOpenAIContent(
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-      body: JSON.stringify({ model, messages, temperature: 0.7 }),
+      body: JSON.stringify({ model, messages, temperature: 0.7, ...buildOpenAIGenerationConfig(provider.generationConfig) }),
     })
     if (!response.ok)
       throw new Error(`API error (${response.status}): ${await response.text()}`)

@@ -1,5 +1,12 @@
 export type APIProviderType = 'gemini' | 'openai'
 
+export interface GenerationConfig {
+  temperature?: number
+  maxTokens?: number
+  topP?: number
+  topK?: number
+}
+
 export interface ProviderConfig {
   id: string
   name: string
@@ -7,6 +14,7 @@ export interface ProviderConfig {
   apiUrl: string
   apiKey: string
   models: string[]
+  generationConfig?: GenerationConfig
 }
 
 export interface CustomPrompt {

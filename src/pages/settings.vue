@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ProviderConfig } from '~/types'
+import type { GenerationConfig, ProviderConfig } from '~/types'
 import JSZip from 'jszip'
 import Sortable from 'sortablejs'
 import { nextTick, onMounted, ref, watch } from 'vue'
@@ -154,6 +154,7 @@ function confirmAddProvider() {
   const form = newProviderForm.value
   if (!form.name.trim()) { alert('请输入供应商名称'); return }
   if (!form.apiKey.trim()) { alert('请输入 API 密钥'); return }
+  form.generationConfig = cleanGenerationConfig(form.generationConfig)
   providers.value.push({ ...form })
   cancelAddProvider()
 }
@@ -175,6 +176,7 @@ function confirmEditProvider() {
   const form = editingProviderForm.value
   if (!form.name.trim()) { alert('请输入供应商名称'); return }
   if (!form.apiKey.trim()) { alert('请输入 API 密钥'); return }
+  form.generationConfig = cleanGenerationConfig(form.generationConfig)
   const idx = providers.value.findIndex(p => p.id === editingProviderId.value)
   if (idx !== -1)
     providers.value[idx] = { ...form }
@@ -187,6 +189,37 @@ function removeProvider(id: string) {
     return
   providers.value = providers.value.filter(x => x.id !== id)
   cancelEditProvider()
+}
+
+// 生成参数 UI 状态
+function cleanGenerationConfig(config: GenerationConfig | undefined): GenerationConfig | undefined {
+  if (!config)
+    return undefined
+  const clean: Record<string, number> = {}
+  if (config.temperature !== undefined && config.temperature !== 0.7)
+    clean.temperature = config.temperature
+  if (config.maxTokens !== undefined && config.maxTokens > 0)
+    clean.maxTokens = config.maxTokens
+  if (config.topP !== undefined && config.topP !== 1)
+    clean.topP = config.topP
+  if (config.topK !== undefined && config.topK > 0)
+    clean.topK = config.topK
+  return Object.keys(clean).length > 0 ? clean : undefined
+}
+
+function getGenValue(form: ProviderConfig, key: keyof GenerationConfig, fallback: number): number {
+  return form.generationConfig?.[key as keyof GenerationConfig] ?? fallback
+}
+
+function setGenValue(form: ProviderConfig, key: keyof GenerationConfig, value: number | undefined) {
+  const current = form.generationConfig || {}
+  if (value === undefined) {
+    const { [key]: _, ...rest } = current
+    form.generationConfig = Object.keys(rest).length > 0 ? (rest as GenerationConfig) : undefined
+  }
+  else {
+    form.generationConfig = { ...current, [key]: value }
+  }
 }
 
 // 模型管理（单个供应商内部）
@@ -690,6 +723,68 @@ async function importSettings(data: any) {
                 </div>
               </div>
             </div>
+            <!-- 生成参数 -->
+            <div>
+              <span label ml-0.5>生成参数</span>
+              <div rounded-lg border="~ base" p-4>
+                <div flex="~ col" gap-4>
+                  <!-- Temperature -->
+                  <div>
+                    <div flex="~ items-center justify-between" mb-0.5>
+                      <span text-sm>Temperature</span>
+                      <span font-mono text-xs op-50>{{ getGenValue(editingProviderForm, 'temperature', 0.7) }}</span>
+                    </div>
+                    <input
+                      type="range" min="0" max="1" step="0.05" w-full accent-teal-500 h-6
+                      :value="getGenValue(editingProviderForm, 'temperature', 0.7)"
+                      @input="setGenValue(editingProviderForm, 'temperature', parseFloat(($event.target as HTMLInputElement).value))"
+                    >
+                  </div>
+                  <!-- Max Tokens -->
+                  <div>
+                    <div flex="~ items-center justify-between" mb-1>
+                      <span text-sm>Max Tokens</span>
+                      <span font-mono text-xs op-50>{{ getGenValue(editingProviderForm, 'maxTokens', 0) || '不限制' }}</span>
+                    </div>
+                    <input
+                      type="number" min="0" max="999999" step="1" w-full
+                      p="x-3 y-1.5" bg="transparent" border="~ rounded base" font-mono text-sm
+                      outline="none active:none"
+                      :value="getGenValue(editingProviderForm, 'maxTokens', 0) || ''"
+                      placeholder="留空或 0 表示不限制"
+                      @input="setGenValue(editingProviderForm, 'maxTokens', parseInt(($event.target as HTMLInputElement).value) || undefined)"
+                    >
+                  </div>
+                  <!-- Top P -->
+                  <div>
+                    <div flex="~ items-center justify-between" mb-0.5>
+                      <span text-sm>Top P</span>
+                      <span font-mono text-xs op-50>{{ getGenValue(editingProviderForm, 'topP', 1) }}</span>
+                    </div>
+                    <input
+                      type="range" min="0" max="1" step="0.05" w-full accent-teal-500 h-6
+                      :value="getGenValue(editingProviderForm, 'topP', 1)"
+                      @input="setGenValue(editingProviderForm, 'topP', parseFloat(($event.target as HTMLInputElement).value))"
+                    >
+                  </div>
+                  <!-- Top K -->
+                  <div>
+                    <div flex="~ items-center justify-between" mb-1>
+                      <span text-sm>Top K</span>
+                      <span font-mono text-xs op-50>{{ getGenValue(editingProviderForm, 'topK', 0) || '不限制' }}</span>
+                    </div>
+                    <input
+                      type="number" min="0" max="500" step="1" w-full
+                      p="x-3 y-1.5" bg="transparent" border="~ rounded base" font-mono text-sm
+                      outline="none active:none"
+                      :value="getGenValue(editingProviderForm, 'topK', 0) || ''"
+                      placeholder="留空或 0 表示不限制"
+                      @input="setGenValue(editingProviderForm, 'topK', parseInt(($event.target as HTMLInputElement).value) || undefined)"
+                    >
+                  </div>
+                </div>
+              </div>
+            </div>
             <div flex="~ gap-2 justify-end">
               <button
                 px-4 py-2 rounded-lg text-sm font-medium text-white cursor-pointer transition-colors
@@ -741,6 +836,21 @@ async function importSettings(data: any) {
                   px-2 py-0.5 rounded text-xs font-mono
                   bg-gray-100 dark:bg-gray-800
                 >{{ m }}</span>
+              </span>
+            </div>
+            <div v-if="prov.generationConfig" flex="~ wrap gap-x-3 gap-y-1">
+              <span op-50>生成参数：</span>
+              <span v-if="prov.generationConfig.temperature !== undefined" font-mono text-xs>
+                Temp: {{ prov.generationConfig.temperature }}
+              </span>
+              <span v-if="prov.generationConfig.maxTokens !== undefined" font-mono text-xs>
+                Max: {{ prov.generationConfig.maxTokens }}
+              </span>
+              <span v-if="prov.generationConfig.topP !== undefined" font-mono text-xs>
+                TopP: {{ prov.generationConfig.topP }}
+              </span>
+              <span v-if="prov.generationConfig.topK !== undefined" font-mono text-xs>
+                TopK: {{ prov.generationConfig.topK }}
               </span>
             </div>
           </div>
@@ -837,6 +947,68 @@ async function importSettings(data: any) {
                   border="~ rounded base focus:teal-600" outline="none" class="h-8"
                   @keydown.enter="newProviderForm.models = [...newProviderForm.models.filter(Boolean)]"
                 >
+              </div>
+            </div>
+          </div>
+          <!-- 生成参数 -->
+          <div>
+            <span label ml-0.5>生成参数</span>
+            <div rounded-lg border="~ base" p-4>
+              <div flex="~ col" gap-4>
+                <!-- Temperature -->
+                <div>
+                  <div flex="~ items-center justify-between" mb-0.5>
+                    <span text-sm>Temperature</span>
+                    <span font-mono text-xs op-50>{{ getGenValue(newProviderForm, 'temperature', 0.7) }}</span>
+                  </div>
+                  <input
+                    type="range" min="0" max="1" step="0.05" w-full accent-teal-500 h-6
+                    :value="getGenValue(newProviderForm, 'temperature', 0.7)"
+                    @input="setGenValue(newProviderForm, 'temperature', parseFloat(($event.target as HTMLInputElement).value))"
+                  >
+                </div>
+                <!-- Max Tokens -->
+                <div>
+                  <div flex="~ items-center justify-between" mb-1>
+                    <span text-sm>Max Tokens</span>
+                    <span font-mono text-xs op-50>{{ getGenValue(newProviderForm, 'maxTokens', 0) || '不限制' }}</span>
+                  </div>
+                  <input
+                    type="number" min="0" max="999999" step="1" w-full
+                    p="x-3 y-1.5" bg="transparent" border="~ rounded base" font-mono text-sm
+                    outline="none active:none"
+                    :value="getGenValue(newProviderForm, 'maxTokens', 0) || ''"
+                    placeholder="留空或 0 表示不限制"
+                    @input="setGenValue(newProviderForm, 'maxTokens', parseInt(($event.target as HTMLInputElement).value) || undefined)"
+                  >
+                </div>
+                <!-- Top P -->
+                <div>
+                  <div flex="~ items-center justify-between" mb-0.5>
+                    <span text-sm>Top P</span>
+                    <span font-mono text-xs op-50>{{ getGenValue(newProviderForm, 'topP', 1) }}</span>
+                  </div>
+                  <input
+                    type="range" min="0" max="1" step="0.05" w-full accent-teal-500 h-6
+                    :value="getGenValue(newProviderForm, 'topP', 1)"
+                    @input="setGenValue(newProviderForm, 'topP', parseFloat(($event.target as HTMLInputElement).value))"
+                  >
+                </div>
+                <!-- Top K -->
+                <div>
+                  <div flex="~ items-center justify-between" mb-1>
+                    <span text-sm>Top K</span>
+                    <span font-mono text-xs op-50>{{ getGenValue(newProviderForm, 'topK', 0) || '不限制' }}</span>
+                  </div>
+                  <input
+                    type="number" min="0" max="500" step="1" w-full
+                    p="x-3 y-1.5" bg="transparent" border="~ rounded base" font-mono text-sm
+                    outline="none active:none"
+                    :value="getGenValue(newProviderForm, 'topK', 0) || ''"
+                    placeholder="留空或 0 表示不限制"
+                    @input="setGenValue(newProviderForm, 'topK', parseInt(($event.target as HTMLInputElement).value) || undefined)"
+                  >
+                </div>
               </div>
             </div>
           </div>
