@@ -1,5 +1,8 @@
 <script setup lang="ts">
+import { useChangelog } from '~/composables/useChangelog'
 import { toggleDark } from '~/logic'
+
+const { hasUnseen, openChangelog } = useChangelog()
 </script>
 
 <template>
@@ -25,6 +28,18 @@ import { toggleDark } from '~/logic'
       >
         <div i-carbon-settings />
       </router-link>
+
+      <button
+        icon-btn relative
+        :title="hasUnseen ? '有新版本，查看更新历史' : '更新历史'"
+        @click="openChangelog"
+      >
+        <div i-carbon-recently-viewed />
+        <span
+          v-if="hasUnseen"
+          absolute top-0 right-0 w-1.5 h-1.5 rounded-full bg-teal-500
+        />
+      </button>
 
       <a
         i-carbon-logo-github icon-btn

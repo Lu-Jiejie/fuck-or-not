@@ -1,0 +1,114 @@
+import type { ChangelogEntry } from '~/types'
+import { version } from '../../package.json'
+
+/** 当前运行的版本号，与 package.json 保持一致 */
+export const currentVersion: string = version
+
+/**
+ * 更新历史，由新到旧排列。
+ *
+ * 只写使用者能感知的要点，不逐条罗列提交记录；
+ * 发布新版本时在数组开头补一条即可（version 要与 package.json 相同）。
+ */
+export const changelogEntries: ChangelogEntry[] = [
+  {
+    version: '1.0.6',
+    date: '2026-06-28',
+    items: [
+      '优化内置 Prompt',
+      '调整 Prompt 的传递方式，语义更明确',
+    ],
+  },
+  {
+    version: '1.0.5',
+    date: '2026-06-27',
+    items: [
+      '支持为供应商配置模型参数（temperature、maxTokens、topP 等）',
+    ],
+  },
+  {
+    version: '1.0.4',
+    date: '2026-06-27',
+    items: [
+      '优化新增模型时的交互',
+      '修复若干已知问题',
+    ],
+  },
+  {
+    version: '1.0.3',
+    date: '2026-06-26',
+    items: [
+      '页面标题处显示当前版本号',
+      '所有收藏项都可以编辑图片链接',
+    ],
+  },
+  {
+    version: '1.0.2',
+    date: '2026-06-26',
+    items: [
+      '重构供应商配置',
+      '支持用图片链接代替上传文件，节省浏览器与同步存储占用',
+      '收藏项支持下载图片',
+      '优化收藏项排版、提示信息与 WebDAV 同步',
+    ],
+  },
+  {
+    version: '1.0.1',
+    date: '2026-06-25',
+    items: [
+      '生成结果改为流式输出',
+      '修复流式响应的解析问题',
+    ],
+  },
+  {
+    version: '1.0.0',
+    date: '2026-06-24',
+    items: [
+      '改用 fetch 直连 API，支持自定义供应商与中转站',
+      '根据 API 自动获取模型列表，模型按供应商分别管理',
+      '收藏项可编辑，并保存对应的 Prompt 与额外提示词',
+      '设置支持导出 / 导入 zip 备份',
+      '优化分页与收藏项排版',
+    ],
+  },
+  {
+    version: '0.0.5',
+    date: '2026-03-26',
+    items: [
+      '支持通过 WebDAV 同步设置与收藏',
+      '优化收藏数据的存储结构',
+    ],
+  },
+  {
+    version: '0.0.4',
+    date: '2026-03-25',
+    items: [
+      '界面优化',
+      '精简代码',
+    ],
+  },
+  {
+    version: '0.0.3',
+    date: '2026-03-18',
+    items: [
+      '样式细节调整',
+    ],
+  },
+  {
+    version: '0.0.2',
+    date: '2026-03-18',
+    items: [
+      '修复下拉选择组件的样式',
+    ],
+  },
+  {
+    version: '0.0.1',
+    date: '2026-01-31',
+    items: [
+      '实现主要功能：上传图片、选择 Prompt、生成分析结果',
+      '收藏分析结果',
+      '图片放大预览',
+      '页头导航与分页',
+    ],
+  },
+]

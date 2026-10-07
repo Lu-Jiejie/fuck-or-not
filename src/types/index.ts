@@ -36,6 +36,16 @@ export interface FavoriteResult {
   imageUrl?: string
 }
 
+/** 单个版本的更新记录 */
+export interface ChangelogEntry {
+  /** 版本号，与 package.json / git tag 保持一致 */
+  version: string
+  /** 发布日期 */
+  date: string
+  /** 要点式更新内容 */
+  items: string[]
+}
+
 // 旧版数据结构，用于迁移兼容
 export interface LegacyFavoriteResult {
   model: string

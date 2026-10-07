@@ -3,12 +3,17 @@ import type { Fn } from '@vueuse/core'
 import { useEventListener } from '@vueuse/core'
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterView } from 'vue-router'
+import ChangelogModal from './components/ChangelogModal.vue'
 import Header from './components/Header.vue'
 import ScrollJump from './components/ScrollJump.vue'
+import { useChangelog } from './composables/useChangelog'
 import { migrateIfNeeded } from './composables/useMigration'
+
+const { initChangelog } = useChangelog()
 
 onMounted(() => {
   migrateIfNeeded()
+  initChangelog()
 })
 
 const imageModel = ref<HTMLImageElement>()
@@ -82,4 +87,7 @@ onBeforeUnmount(() => {
       >
     </div>
   </Transition>
+
+  <!-- 更新历史 -->
+  <ChangelogModal />
 </template>
