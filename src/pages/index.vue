@@ -38,10 +38,7 @@ const {
   handleStartEditResult,
   handleConfirmEditResult,
   handleCancelEditResult,
-  handleFillTestResult,
 } = useAnalyse()
-
-const isDev = import.meta.env.DEV
 
 // 正在生成 或 已有结果但未保存 时，离开路由需确认
 const hasUnsavedWork = computed(() =>
@@ -164,17 +161,7 @@ onBeforeRouteLeave(() => {
     分析
   </Button>
 
-  <!-- 测试按钮（仅 dev 模式显示） -->
-  <div v-if="isDev" flex justify-end mt-2>
-    <button
-      text-xs rounded-md px-3 py-1.5 border="~ dashed base"
-      op-60 hover="op-100 border-teal-500 text-teal-600"
-      transition-colors duration-200 cursor-pointer
-      @click="handleFillTestResult"
-    >
-      填充测试结果
-    </button>
-  </div>
+  <!-- 测试入口见右下角 DevPanel（仅 dev 模式） -->
 
   <!-- 结果区 -->
   <template v-if="result !== '' || errorMsg !== ''">

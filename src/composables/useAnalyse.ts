@@ -3,68 +3,75 @@ import { useStorage } from '@vueuse/core'
 import { computed, ref, watch, watchEffect } from 'vue'
 import { addAdditionalPreset, additionalPromptPresets, computeStringHash, customPrompts, favoriteResults, fileToBase64, generateContent, getPromptById, providers, removeAdditionalPreset, saveImage } from '~/logic'
 
+/**
+ * 分析页的状态放在模块作用域，使其成为共享单例。
+ * 这样开发测试面板（DevPanel）与页面拿到的是同一份状态，
+ * 也能避免多个组件各自 useAnalyse() 时出现互不相干的状态副本。
+ * 与 useWebDAV / useChangelog 的写法保持一致。
+ */
+const image = ref<File | string | null>(null)
+const base64Image = ref<string | null>(null)
+
+const selectedProviderId = useStorage<string | undefined>('selected-provider-id', undefined)
+const selectedModelId = useStorage('selected-model', '')
+const selectedPromptId = useStorage('selected-prompt-id', 'novel')
+const additionalPrompt = ref('')
+const result = ref('')
+const errorMsg = ref('')
+const analyseButtonLoading = ref(false)
+const saveButtonDisabled = ref(false)
+
+// 结果编辑
+const isEditingResult = ref(false)
+const editedResultText = ref('')
+
+const lastFavoriteResult = ref<PendingFavoriteResult | null>(null)
+
+/** 流式模拟的中断标志，仅 dev 面板使用 */
+const devStreamAbort = ref(false)
+
+const selectedProvider = computed(() =>
+  selectedProviderId.value
+    ? providers.value.find(p => p.id === selectedProviderId.value)
+    : undefined,
+)
+
+// 当供应商 id 改变时，清空已选的模型
+watch(selectedProviderId, () => {
+  selectedModelId.value = ''
+})
+
+// 确保选中的 Prompt ID 有效
+watchEffect(() => {
+  const prompts = customPrompts.value
+  const exists = prompts.some(p => p.id === selectedPromptId.value)
+  if (!exists && prompts.length > 0)
+    selectedPromptId.value = prompts[0].id
+})
+
+const providerSelectOptions = computed(() =>
+  providers.value.map(p => ({ label: p.name, value: p.id })),
+)
+
+const modelSelectOptions = computed(() => {
+  if (!selectedProvider.value)
+    return []
+  return selectedProvider.value.models.map(m => ({ label: m, value: m }))
+})
+
+const promptSelectOptions = computed(() =>
+  customPrompts.value.map(prompt => ({ label: prompt.name, value: prompt.id })),
+)
+
+const selectedPrompt = computed(() => getPromptById(selectedPromptId.value))
+
+const analyseButtonDisabled = computed(() => {
+  if (!selectedModelId.value || !selectedPromptId.value || !selectedProvider.value)
+    return true
+  return !image.value
+})
+
 export function useAnalyse() {
-  const image = ref<File | string | null>(null)
-  const base64Image = ref<string | null>(null)
-
-  const selectedProviderId = useStorage<string | undefined>('selected-provider-id', undefined)
-  const selectedModelId = useStorage('selected-model', '')
-  const selectedPromptId = useStorage('selected-prompt-id', 'novel')
-  const additionalPrompt = ref('')
-  const result = ref('')
-  const errorMsg = ref('')
-  const analyseButtonLoading = ref(false)
-  const saveButtonDisabled = ref(false)
-
-  // 结果编辑
-  const isEditingResult = ref(false)
-  const editedResultText = ref('')
-
-  const lastFavoriteResult = ref<PendingFavoriteResult | null>(null)
-
-  const selectedProvider = computed(() => {
-    if (!selectedProviderId.value)
-      return undefined
-    return providers.value.find(p => p.id === selectedProviderId.value)
-  })
-
-  // 当供应商 id 改变时，清空已选的模型
-  watch(selectedProviderId, () => {
-    selectedModelId.value = ''
-  })
-
-  // 确保选中的 Prompt ID 有效
-  watchEffect(() => {
-    const prompts = customPrompts.value
-    const exists = prompts.some(p => p.id === selectedPromptId.value)
-    if (!exists && prompts.length > 0)
-      selectedPromptId.value = prompts[0].id
-  })
-
-  const providerSelectOptions = computed(() =>
-    providers.value.map(p => ({ label: p.name, value: p.id })),
-  )
-
-  const modelSelectOptions = computed(() => {
-    if (!selectedProvider.value)
-      return []
-    return selectedProvider.value.models.map(m => ({ label: m, value: m }))
-  })
-
-  const promptSelectOptions = computed(() =>
-    customPrompts.value.map(prompt => ({ label: prompt.name, value: prompt.id })),
-  )
-
-  const selectedPrompt = computed(() => getPromptById(selectedPromptId.value))
-
-  const analyseButtonDisabled = computed(() => {
-    if (!selectedModelId.value || !selectedPromptId.value || !selectedProvider.value)
-      return true
-    if (typeof image.value === 'string')
-      return !image.value
-    return !image.value
-  })
-
   // 额外提示词预设（标签栏模式）
   const selectedAdditionalPresetId = ref<string | null>(null)
 
@@ -115,38 +122,106 @@ export function useAnalyse() {
     isEditingResult.value = false
   }
 
-  // 仅用于开发测试
-  function handleFillTestResult() {
+  // ──────────────────────────────────────────────
+  // 开发测试注入点（仅 dev 面板调用，不参与生产流程）
+  // ──────────────────────────────────────────────
+
+  /**
+   * 把一个「假的分析结果」当作真实分析产物塞进状态机。
+   * 之后保存、编辑、收藏等流程与真实分析完全一致，便于离线测试。
+   */
+  function injectFakeResult(text: string, options: { withImage?: boolean } = {}) {
     errorMsg.value = ''
     isEditingResult.value = false
+    result.value = text
     saveButtonDisabled.value = false
-    result.value = [
-      '## 测试结果',
-      '',
-      '这是一段用于**开发测试**的模拟分析结果。',
-      '',
-      '- 列表项一',
-      '- 列表项二',
-      '- 列表项三',
-      '',
-      '> 引用：你可以点击「编辑结果」来测试编辑功能。',
-      '',
-      '```js',
-      'console.log(\'hello fuck-or-not\')',
-      '```',
-    ].join('\n')
+    // 1×1 透明 PNG：只是为了让「保存结果」流程能真的写进 imageStore。
+    // 内联在这里，避免把 dev fixtures 拖进生产包。
+    const placeholderImage = options.withImage === false
+      ? ''
+      : 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg=='
     lastFavoriteResult.value = {
       model: selectedModelId.value || 'test-model',
       mode: selectedPromptId.value,
       imageHash: '',
       mimeType: 'image/png',
       time: Date.now(),
-      result: result.value,
+      result: text,
       prompt: selectedPrompt.value?.content ?? '',
       additionalPrompt: additionalPrompt.value.trim(),
-      _pendingBase64: '',
+      _pendingBase64: placeholderImage,
       _sourceUrl: undefined,
     }
+    return text
+  }
+
+  /**
+   * 模拟一次真实的流式分析，但不发起任何网络请求。
+   *
+   * 走的是和 handleAnalyseButtonClick 完全相同的 UI 状态机
+   * （loading / result 逐块累加 / 待存数据 / finally 收尾），
+   * 因此可以离线验证打字机效果、自动滚动、长文本渲染与中断行为，
+   * 不触碰 provider、apiKey、image 等前置校验。
+   */
+  async function simulateStream(
+    text: string,
+    options: { chunkSize?: number, interval?: number, clear?: boolean } = {},
+  ) {
+    const { chunkSize = 4, interval = 40, clear = true } = options
+
+    // 与真实分析保持一致的前置状态
+    analyseButtonLoading.value = true
+    errorMsg.value = ''
+    if (clear)
+      result.value = ''
+    lastFavoriteResult.value = null
+    saveButtonDisabled.value = false
+    devStreamAbort.value = false
+
+    const chunks: string[] = []
+    for (let i = 0; i < text.length; i += chunkSize)
+      chunks.push(text.slice(i, i + chunkSize))
+
+    let aborted = false
+    try {
+      for (const chunk of chunks) {
+        if (devStreamAbort.value) {
+          aborted = true
+          break
+        }
+        result.value += chunk
+        await new Promise(resolve => setTimeout(resolve, interval))
+      }
+
+      if (aborted) {
+        console.warn('[DevPanel] 流式模拟被中断')
+      }
+      else {
+        // 流结束后补上待存数据，让「保存结果」可用
+        lastFavoriteResult.value = {
+          model: selectedModelId.value || 'test-model',
+          mode: selectedPromptId.value,
+          imageHash: '',
+          mimeType: 'image/png',
+          time: Date.now(),
+          result: result.value,
+          prompt: selectedPrompt.value?.content ?? '',
+          additionalPrompt: additionalPrompt.value.trim(),
+          _pendingBase64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==',
+          _sourceUrl: undefined,
+        }
+      }
+    }
+    finally {
+      analyseButtonLoading.value = false
+      devStreamAbort.value = false
+    }
+  }
+
+  /** 中断正在进行的流式模拟 */
+  function abortStream() {
+    if (analyseButtonLoading.value)
+      devStreamAbort.value = true
   }
 
   async function urlToBase64(url: string): Promise<{ base64: string, mimeType: string }> {
@@ -353,6 +428,9 @@ export function useAnalyse() {
     handleStartEditResult,
     handleConfirmEditResult,
     handleCancelEditResult,
-    handleFillTestResult,
+    // 开发测试注入点
+    injectFakeResult,
+    simulateStream,
+    abortStream,
   }
 }

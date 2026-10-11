@@ -1,13 +1,21 @@
 <script setup lang="ts">
 import type { Fn } from '@vueuse/core'
 import { useEventListener } from '@vueuse/core'
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterView } from 'vue-router'
 import ChangelogModal from './components/ChangelogModal.vue'
 import Header from './components/Header.vue'
 import ScrollJump from './components/ScrollJump.vue'
 import { useChangelog } from './composables/useChangelog'
 import { migrateIfNeeded } from './composables/useMigration'
+
+const isDev = import.meta.env.DEV
+
+// DevPanel 只在 dev 模式加载：用动态 import 让生产构建能整块剔除，
+// 否则测试用的 fixtures 字符串会被打进主包。
+const DevPanel = isDev
+  ? defineAsyncComponent(() => import('./components/DevPanel.vue'))
+  : null
 
 const { initChangelog } = useChangelog()
 
@@ -90,4 +98,7 @@ onBeforeUnmount(() => {
 
   <!-- 更新历史 -->
   <ChangelogModal />
+
+  <!-- 开发测试面板（仅 dev 模式加载） -->
+  <component :is="DevPanel" v-if="DevPanel" />
 </template>
