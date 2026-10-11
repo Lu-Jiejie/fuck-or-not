@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import DOMPurify from 'dompurify'
 import MarkdownIt from 'markdown-it'
 import { computed } from 'vue'
 
@@ -7,18 +8,28 @@ const props = defineProps<{
 }>()
 
 const md = new MarkdownIt({
-  html: true,
+  // 模型输出与外部图片链接都不可信：禁止原始 HTML 直通，
+  // 只渲染 markdown 语法，再由 DOMPurify 兜底清洗。
+  html: false,
   breaks: true,
   linkify: true,
   typographer: true,
 })
 
+// 安全加固：分析结果会被存进收藏，属于存储型 XSS 的入口，
+// 因此对渲染结果做一次白名单清洗，并只放行安全协议的链接。
+const sanitizeConfig = {
+  ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel|data:image\/(?:png|jpe?g|gif|webp|bmp);base64):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i,
+}
+
 const rendered = computed(() => {
-  return md.render(props.content)
+  const html = md.render(props.content ?? '')
+  return DOMPurify.sanitize(html, sanitizeConfig)
 })
 </script>
 
 <template>
+  <!-- eslint-disable-next-line vue/no-v-html -- 内容已通过 DOMPurify 白名单清洗 -->
   <div class="markdown-body" v-html="rendered" />
 </template>
 

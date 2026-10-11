@@ -17,6 +17,7 @@
   "dependencies": {
     "@vueuse/core": "^14.3.0",
     "@vueuse/integrations": "^14.3.0",
+    "dompurify": "^3.4.16",
     "idb-keyval": "^6.2.5",
     "jszip": "^3.10.1",
     "markdown-it": "^14.2.0",

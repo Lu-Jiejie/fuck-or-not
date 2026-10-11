@@ -539,8 +539,12 @@ export function fileToBase64(file: File): Promise<string> {
   })
 }
 
-export function base64ToBytes(base64: string): Uint8Array {
-  return Uint8Array.from(atob(base64), c => c.charCodeAt(0))
+export function base64ToBytes(base64: string): Uint8Array<ArrayBuffer> {
+  const binary = atob(base64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++)
+    bytes[i] = binary.charCodeAt(i)
+  return bytes as Uint8Array<ArrayBuffer>
 }
 
 export async function computeImageHash(base64: string): Promise<string> {

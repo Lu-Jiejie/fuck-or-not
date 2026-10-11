@@ -1,4 +1,4 @@
-import type { FavoriteResult } from '~/types'
+import type { FavoriteResult, PendingFavoriteResult } from '~/types'
 import { useStorage } from '@vueuse/core'
 import { computed, ref, watch, watchEffect } from 'vue'
 import { addAdditionalPreset, additionalPromptPresets, computeStringHash, customPrompts, favoriteResults, fileToBase64, generateContent, getPromptById, providers, removeAdditionalPreset, saveImage } from '~/logic'
@@ -20,7 +20,7 @@ export function useAnalyse() {
   const isEditingResult = ref(false)
   const editedResultText = ref('')
 
-  const lastFavoriteResult = ref<FavoriteResult | null>(null)
+  const lastFavoriteResult = ref<PendingFavoriteResult | null>(null)
 
   const selectedProvider = computed(() => {
     if (!selectedProviderId.value)
@@ -146,7 +146,7 @@ export function useAnalyse() {
       additionalPrompt: additionalPrompt.value.trim(),
       _pendingBase64: '',
       _sourceUrl: undefined,
-    } as any
+    }
   }
 
   async function urlToBase64(url: string): Promise<{ base64: string, mimeType: string }> {
@@ -192,6 +192,9 @@ export function useAnalyse() {
     analyseButtonLoading.value = true
     errorMsg.value = ''
     result.value = ''
+    // 清掉上一轮的待存数据，避免本轮失败后仍能把旧结果保存下来
+    lastFavoriteResult.value = null
+    saveButtonDisabled.value = false
 
     try {
       const systemInstruction = selectedPrompt.value.content || '分析这张图片'
@@ -252,9 +255,9 @@ export function useAnalyse() {
           result: response.text!,
           prompt: selectedPrompt.value?.content ?? '',
           additionalPrompt: additionalPrompt.value.trim(),
-          _pendingBase64: lastImage,
+          _pendingBase64: lastImage ?? undefined,
           _sourceUrl: sourceUrl,
-        } as any
+        }
       }
     }
     catch (error) {
@@ -267,37 +270,59 @@ export function useAnalyse() {
   }
 
   async function handleSaveButtonClick() {
+    const pending = lastFavoriteResult.value
+    if (!pending) {
+      errorMsg.value = '没有可保存的结果，请先重新分析。'
+      saveButtonDisabled.value = false
+      return
+    }
+
+    // 只有在真正写入成功后才锁定按钮；失败时恢复可点击，避免用户被永久卡死。
     saveButtonDisabled.value = true
-    const pending = lastFavoriteResult.value as any
-    const base64 = pending._pendingBase64 as string
-    const mimeType = pending.mimeType as string
-    const sourceUrl = pending._sourceUrl as string | undefined
+    errorMsg.value = ''
 
-    let hash: string
-    const item: FavoriteResult = {
-      model: pending.model,
-      mode: pending.mode,
-      imageHash: '',
-      mimeType,
-      time: pending.time,
-      result: pending.result,
-      prompt: pending.prompt ?? '',
-      additionalPrompt: pending.additionalPrompt ?? '',
-    }
+    try {
+      const mimeType = pending.mimeType
+      const sourceUrl = pending._sourceUrl
+      const base64 = pending._pendingBase64
 
-    if (sourceUrl) {
-      hash = await computeStringHash(sourceUrl)
-      item.imageHash = hash
-      item.imageUrl = sourceUrl
-    }
-    else {
-      hash = await saveImage(base64, mimeType)
-      item.imageHash = hash
-    }
+      const item: FavoriteResult = {
+        model: pending.model,
+        mode: pending.mode,
+        imageHash: '',
+        mimeType,
+        time: pending.time,
+        result: pending.result,
+        prompt: pending.prompt ?? '',
+        additionalPrompt: pending.additionalPrompt ?? '',
+      }
 
-    if (!favoriteResults.data.value)
-      favoriteResults.data.value = []
-    favoriteResults.data.value.unshift(item)
+      if (sourceUrl) {
+        item.imageHash = await computeStringHash(sourceUrl)
+        item.imageUrl = sourceUrl
+      }
+      else {
+        if (!base64) {
+          errorMsg.value = '图片数据已丢失，请重新分析后再保存。'
+          saveButtonDisabled.value = false
+          return
+        }
+        item.imageHash = await saveImage(base64, mimeType)
+      }
+
+      if (!favoriteResults.data.value)
+        favoriteResults.data.value = []
+      favoriteResults.data.value.unshift(item)
+
+      // 保存成功，丢弃暂存数据
+      lastFavoriteResult.value = null
+    }
+    catch (error) {
+      console.error('[Save Error]', error)
+      errorMsg.value = `保存失败：${(error as Error).message || String(error)}`
+      // 关键：失败必须解锁，否则按钮会永远停在「已保存」
+      saveButtonDisabled.value = false
+    }
   }
 
   return {
