@@ -12,6 +12,18 @@ export const currentVersion: string = version
  */
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: '1.1.0',
+    date: '2026-10-14',
+    items: [
+      '新增「会话历史」页面，保留最近 24 小时的分析记录',
+      '刷新或误关页面后，未保存的分析结果会自动恢复',
+      '历史记录可一键收藏，收藏后的内容可在收藏页编辑',
+      '收藏项支持「载入」回分析页，继续编辑或重新分析',
+      '修复载入图片文件后无法正常显示的问题',
+      '修复切换图片来源页签时丢失已选图片的问题',
+    ],
+  },
+  {
     version: '1.0.6',
     date: '2026-06-28',
     items: [

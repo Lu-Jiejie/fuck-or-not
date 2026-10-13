@@ -4,9 +4,11 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import FavoritesItem from '~/components/FavoritesItem.vue'
 import FavoritesToolbar from '~/components/FavoritesToolbar.vue'
-import { computeStringHash, deletedTimestampsStore, deleteImageIfUnused, favoriteResults, imageStore, markAsDeleted } from '~/logic'
+import { useAnalyse } from '~/composables/useAnalyse'
+import { computeStringHash, deletedTimestampsStore, deleteImageIfUnused, favoriteResults, getImageByHash, imageStore, markAsDeleted } from '~/logic'
 
 const router = useRouter()
+const { loadIntoAnalyse } = useAnalyse()
 // const isMobile = useMediaQuery('(max-width: 768px)')
 const isMobile = true
 const sortOrder = useStorage<'newest' | 'oldest'>('favorites-sort-order', 'newest')
@@ -115,6 +117,24 @@ function onDeleteAll() {
   page.value = 1
 }
 
+// 把收藏项载入分析页：外链直接回填，文件图从 imageStore 取回 base64
+function onLoad(item: NonNullable<typeof favoriteResults.data.value>[number]) {
+  const image = getImageByHash(item.imageHash)
+  loadIntoAnalyse({
+    result: item.result,
+    model: item.model,
+    mode: item.mode,
+    mimeType: item.mimeType,
+    time: item.time,
+    prompt: item.prompt,
+    additionalPrompt: item.additionalPrompt,
+    imageHash: item.imageHash,
+    imageBase64: item.imageUrl ? undefined : image.base64 || undefined,
+    imageUrl: item.imageUrl,
+  })
+  router.push('/')
+}
+
 function navigateToSettings() {
   router.push('/settings')
   // 等待路由跳转完成后滚动到页面底部
@@ -174,6 +194,7 @@ function navigateToSettings() {
             :item="item"
             :is-mobile="isMobile"
             @delete="onDelete(item.time)"
+            @load="onLoad(item)"
             @update="(result: string) => onUpdate(item.time, result)"
             @update-image-url="(imageUrl: string) => onUpdateImageUrl(item.time, imageUrl)"
           />

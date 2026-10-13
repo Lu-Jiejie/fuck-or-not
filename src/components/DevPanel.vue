@@ -4,7 +4,9 @@
 import { onClickOutside, useDraggable, useStorage } from '@vueuse/core'
 import { computed, ref } from 'vue'
 import { useAnalyse } from '~/composables/useAnalyse'
+import { useHistory } from '~/composables/useHistory'
 import {
+  makeHistoryFixtures,
   STREAM_FIXTURE,
   TEST_NOVEL,
   TEST_NOVEL_BOLD_TITLE,
@@ -20,6 +22,33 @@ const {
   simulateStream,
   abortStream,
 } = useAnalyse()
+
+const { pushHistory, clearHistory, entries: historyEntries } = useHistory()
+
+// 造历史记录：按钮会往真实历史里写数据，随后可在 /history 查看效果
+const historyBusy = ref(false)
+
+async function addHistoryFixtures(count: number, withImage = true) {
+  if (historyBusy.value)
+    return
+  historyBusy.value = true
+  try {
+    for (const item of makeHistoryFixtures(count, { withImage }))
+      await pushHistory(item)
+  }
+  catch (e) {
+    console.error('[DevPanel] 写入历史失败', e)
+  }
+  finally {
+    historyBusy.value = false
+  }
+}
+
+async function clearAllHistory() {
+  if (!window.confirm('（dev）确定清空全部历史记录？'))
+    return
+  await clearHistory()
+}
 
 const isOpen = useStorage('dev-panel-open', false)
 
@@ -234,6 +263,52 @@ const resultStats = computed(() => {
             空结果
           </button>
         </div>
+      </div>
+
+      <!-- 历史记录 -->
+      <div>
+        <div label mb-2>
+          历史记录（当前 {{ historyEntries.length }} 条）
+        </div>
+        <div flex="~ gap-2 wrap">
+          <button
+            class="btn text-xs" :disabled="historyBusy"
+            @click="addHistoryFixtures(1)"
+          >
+            加 1 条
+          </button>
+          <button
+            class="btn text-xs" :disabled="historyBusy"
+            @click="addHistoryFixtures(3)"
+          >
+            加 3 条
+          </button>
+          <button
+            class="btn text-xs" :disabled="historyBusy"
+            @click="addHistoryFixtures(5)"
+          >
+            加满 5 条
+          </button>
+          <button
+            class="btn text-xs !bg-gray-500" :disabled="historyBusy"
+            @click="addHistoryFixtures(2, false)"
+          >
+            加 2 条（无图）
+          </button>
+          <button
+            class="btn text-xs !bg-red-500 hover:!bg-red-600" :disabled="historyBusy"
+            @click="clearAllHistory"
+          >
+            清空历史
+          </button>
+        </div>
+        <p mt-2 op-50 leading-relaxed>
+          写入后到
+          <router-link to="/history" class="underline hover:text-teal-600">
+            /history
+          </router-link>
+          查看。条数上限 5，超出会挤掉最旧的。
+        </p>
       </div>
 
       <!-- 安全 / 边界 -->

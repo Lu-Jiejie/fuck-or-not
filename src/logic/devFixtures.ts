@@ -152,3 +152,47 @@ export const TEST_XSS_PAYLOAD = [
   '',
   '若你看到弹窗或页面出现异常，说明清洗失效。',
 ].join('\n')
+
+// 历史记录测试：造几条形态各异的记录，便于检查列表、分页与收藏按钮。
+// 时间从「几分钟前」铺到「接近 24 小时」，覆盖时间的显示。
+const HISTORY_MODELS = [
+  'gemini-2.5-flash',
+  'grok-4-fast-reasoning',
+  'gpt-4o',
+  'gemini-2.5-flash-lite',
+  'gpt-4o-mini',
+  'test-model',
+]
+const HISTORY_MODES = ['novel', 'description', 'custom']
+const HISTORY_TEXTS = [TEST_NOVEL, TEST_NOVEL_BOLD_TITLE, TEST_SHORT]
+
+// 递增偏移：每次调用都往后挪，避免连点产生同一时间戳被去重吃掉
+let historySeq = 0
+
+/** 1×1 透明 PNG，仅用于让历史/收藏的照片流程能跑通 */
+export const DEV_PLACEHOLDER_PNG
+  = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg=='
+
+/** 生成 n 条历史，每次调用时间都不同，便于反复点击测试 */
+export function makeHistoryFixtures(count = 3, options: { withImage?: boolean } = {}) {
+  const { withImage = true } = options
+  const now = Date.now()
+  return Array.from({ length: count }, (_, i) => {
+    const seq = historySeq++
+    // 一轮 5 条铺满 仍在新旧两端；连点多次时整体往前推，避免同一时间戳被去重
+    const ageMin = (seq % 5) * 300 + 2 + Math.floor(seq / 5) * 2
+    return {
+      time: now - ageMin * 60_000,
+      result: HISTORY_TEXTS[seq % HISTORY_TEXTS.length],
+      model: HISTORY_MODELS[seq % HISTORY_MODELS.length],
+      mode: HISTORY_MODES[seq % HISTORY_MODES.length],
+      mimeType: 'image/png',
+      prompt: `（dev 测试 Prompt ${seq + 1}）`,
+      additionalPrompt: i % 2 === 0 ? '（dev 额外提示词）' : '',
+      imageHash: '',
+      imageBase64: withImage ? DEV_PLACEHOLDER_PNG : undefined,
+      imageUrl: undefined,
+      saved: false,
+    }
+  })
+}

@@ -1,45 +1,29 @@
 <script setup lang="ts">
-import { useChangelog } from '~/composables/useChangelog'
 import { toggleDark } from '~/logic'
-
-const { hasUnseen, openChangelog } = useChangelog()
 </script>
 
 <template>
   <header w-full flex items-center justify-end p-8>
-    <nav text-xl inline-flex gap-4>
-      <router-link
-        to="/"
-        icon-btn title="Home"
-      >
+    <nav text-xl inline-flex items-center gap-4>
+      <!-- 导航：按使用频率从高到低 -->
+      <router-link to="/" icon-btn title="首页">
         <div i-carbon-home />
       </router-link>
 
-      <router-link
-        to="/favorites"
-        icon-btn title="Favorites"
-      >
+      <router-link to="/favorites" icon-btn title="收藏夹">
         <div i-carbon-bookmark />
       </router-link>
 
-      <router-link
-        to="/settings"
-        icon-btn title="Settings"
-      >
+      <router-link to="/history" icon-btn title="会话历史">
+        <div i-carbon-time />
+      </router-link>
+
+      <router-link to="/settings" icon-btn title="设置">
         <div i-carbon-settings />
       </router-link>
 
-      <button
-        icon-btn relative
-        :title="hasUnseen ? '有新版本，查看更新历史' : '更新历史'"
-        @click="openChangelog"
-      >
-        <div i-carbon-recently-viewed />
-        <span
-          v-if="hasUnseen"
-          absolute top-0 right-0 w-1.5 h-1.5 rounded-full bg-teal-500
-        />
-      </button>
+      <!-- 分隔：左侧是站内导航，右侧是外部链接与全局开关 -->
+      <span w-px h-5 bg-gray-300 dark:bg-gray-700 mx-1 />
 
       <a
         i-carbon-logo-github icon-btn
@@ -49,7 +33,7 @@ const { hasUnseen, openChangelog } = useChangelog()
         title="GitHub"
       />
 
-      <button icon-btn title="Theme" @click="toggleDark()">
+      <button icon-btn title="切换主题" @click="toggleDark()">
         <div i-carbon-sun dark:i-carbon-moon />
       </button>
     </nav>

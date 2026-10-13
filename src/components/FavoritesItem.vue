@@ -14,6 +14,7 @@ const emit = defineEmits<{
   delete: []
   update: [result: string]
   updateImageUrl: [imageUrl: string]
+  load: []
 }>()
 
 const contentExpanded = ref(false)
@@ -289,7 +290,7 @@ function downloadImage() {
           </button>
         </div>
 
-        <!-- 编辑 / 删除按钮组 -->
+        <!-- 编辑 / 载入 / 删除按钮组 -->
         <div flex="~ gap-2">
           <button
             v-if="!isEditing"
@@ -301,6 +302,16 @@ function downloadImage() {
           >
             <div i-carbon-edit />
             编辑
+          </button>
+          <button
+            type="button" title="载入到分析页"
+            flex="~ items-center gap-1" px-3 py-1.5 rounded-md text-xs text-white font-bold
+            bg-amber-600 hover:bg-amber-500
+            cursor-pointer transition-colors duration-200
+            @click="emit('load')"
+          >
+            <div i-carbon-arrow-right />
+            载入
           </button>
           <button
             type="button" title="删除此项"

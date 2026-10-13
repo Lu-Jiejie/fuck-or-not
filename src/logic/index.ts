@@ -658,6 +658,52 @@ export async function saveImage(base64: string, mimeType: string): Promise<strin
   return hash
 }
 
+// 把一份结果写进收藏；图片是外链就记 URL，是文件就存进 imageStore。
+// 分析页与历史页共用，避免两处各写一遍导致行为分叉。
+export async function addFavorite(input: {
+  model: string
+  mode: string
+  time: number
+  result: string
+  mimeType: string
+  prompt?: string
+  additionalPrompt?: string
+  base64?: string
+  sourceUrl?: string
+}): Promise<{ added: boolean, item: FavoriteResult }> {
+  const item: FavoriteResult = {
+    model: input.model,
+    mode: input.mode,
+    imageHash: '',
+    mimeType: input.mimeType,
+    time: input.time,
+    result: input.result,
+    prompt: input.prompt ?? '',
+    additionalPrompt: input.additionalPrompt ?? '',
+  }
+
+  if (input.sourceUrl) {
+    item.imageHash = await computeStringHash(input.sourceUrl)
+    item.imageUrl = input.sourceUrl
+  }
+  else if (input.base64) {
+    item.imageHash = await saveImage(input.base64, input.mimeType)
+  }
+  else {
+    throw new Error('图片数据已丢失，请重新分析后再保存')
+  }
+
+  if (!favoriteResults.data.value)
+    favoriteResults.data.value = []
+
+  // 同一份结果重复保存时按 time 去重，避免收藏里出现两条一样的
+  if (favoriteResults.data.value.some(f => f.time === item.time))
+    return { added: false, item }
+
+  favoriteResults.data.value.unshift(item)
+  return { added: true, item }
+}
+
 export function getImageByHash(hash: string): { base64: string, mimeType: string } {
   return {
     base64: imageStore.data.value[hash] ?? '',

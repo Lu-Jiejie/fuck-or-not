@@ -1,11 +1,19 @@
-import type { FavoriteResult, PendingFavoriteResult } from '~/types'
+import type { HistoryEntry, PendingFavoriteResult } from '~/types'
 import { useStorage } from '@vueuse/core'
 import { computed, ref, watch, watchEffect } from 'vue'
-import { addAdditionalPreset, additionalPromptPresets, computeStringHash, customPrompts, favoriteResults, fileToBase64, generateContent, getPromptById, isAbortError, providers, removeAdditionalPreset, saveImage } from '~/logic'
+import { useHistory } from '~/composables/useHistory'
+import { addAdditionalPreset, addFavorite, additionalPromptPresets, customPrompts, fileToBase64, generateContent, getPromptById, isAbortError, providers, removeAdditionalPreset } from '~/logic'
 
 // 状态放模块作用域使其成为共享单例，让 DevPanel 与页面拿到同一份状态
+const { pushHistory, markHistorySaved } = useHistory()
+
 const image = ref<File | string | null>(null)
 const base64Image = ref<string | null>(null)
+// 载入文件图时原始字节的 MIME；File 有 type，这条路径没有
+const imageMimeType = ref<string>('image/png')
+
+// 图片来自字节（File 或载入的 base64），而不是外部链接
+const imageIsInline = computed(() => image.value instanceof File || (!image.value && Boolean(base64Image.value)))
 
 const selectedProviderId = useStorage<string | undefined>('selected-provider-id', undefined)
 const selectedModelId = useStorage('selected-model', '')
@@ -30,6 +38,9 @@ let analyseAbortController: AbortController | null = null
 
 // 本轮分析是否被用户主动取消
 const analyseAborted = ref(false)
+
+// 当前结果对应的历史条目 id，保存成功后据此标记已保存
+const currentHistoryId = ref<string | null>(null)
 
 const selectedProvider = computed(() =>
   selectedProviderId.value
@@ -214,6 +225,93 @@ export function useAnalyse() {
       devStreamAbort.value = true
   }
 
+  // 分析/取消后统一收尾：写入待存数据并记一条历史，两条路径共用避免走样
+  function acceptResult(text: string, mimeType: string, base64: string | undefined, sourceUrl: string | undefined) {
+    const time = Date.now()
+    lastFavoriteResult.value = {
+      model: selectedModelId.value || 'test-model',
+      mode: selectedPromptId.value,
+      imageHash: '',
+      mimeType,
+      time,
+      result: text,
+      prompt: selectedPrompt.value?.content ?? '',
+      additionalPrompt: additionalPrompt.value.trim(),
+      _pendingBase64: base64,
+      _sourceUrl: sourceUrl,
+    }
+    // 历史写入失败不该影响主流程（例如配额不足）
+    pushHistory({
+      time,
+      result: text,
+      model: selectedModelId.value || 'test-model',
+      mode: selectedPromptId.value,
+      mimeType,
+      prompt: selectedPrompt.value?.content ?? '',
+      additionalPrompt: additionalPrompt.value.trim(),
+      imageHash: '',
+      imageBase64: sourceUrl ? undefined : base64,
+      imageUrl: sourceUrl,
+      saved: false,
+    })
+      .then((entry) => { currentHistoryId.value = entry.id })
+      .catch(e => console.warn('[History] 写入失败', e))
+  }
+
+  // 把一份已有结果载入分析页：结果、图片、以及当时的模型/Prompt 选择。
+  // 历史页与收藏页的「载入」都走这里，避免两处行为分叉。
+  function loadIntoAnalyse(input: {
+    id?: string
+    result: string
+    model: string
+    mode: string
+    mimeType: string
+    time: number
+    imageHash?: string
+    prompt?: string
+    additionalPrompt?: string
+    imageBase64?: string
+    imageUrl?: string
+  }) {
+    isEditingResult.value = false
+    analyseAborted.value = false
+    errorMsg.value = ''
+    result.value = input.result
+    additionalPrompt.value = input.additionalPrompt ?? ''
+    saveButtonDisabled.value = false
+    // 载入收藏时没有对应历史条目，置空以免误标
+    currentHistoryId.value = input.id ?? null
+
+    // 只在目标仍存在时才切，避免指向已删除的供应商/模型或 Prompt
+    if (input.mode && customPrompts.value.some(p => p.id === input.mode))
+      selectedPromptId.value = input.mode
+    if (input.model && providers.value.some(p => p.models.includes(input.model)))
+      selectedModelId.value = input.model
+
+    // 回填上传区的图片。文件图不能塞成 data: URL，否则会被当成外链，
+    // 在输入框里显示一大串 base64；改为保留原始 base64 走字节路径。
+    image.value = input.imageUrl ?? null
+    base64Image.value = input.imageBase64 ?? null
+    imageMimeType.value = input.mimeType || 'image/png'
+
+    lastFavoriteResult.value = {
+      model: input.model,
+      mode: input.mode,
+      imageHash: input.imageHash || '',
+      mimeType: input.mimeType,
+      time: input.time,
+      result: input.result,
+      prompt: input.prompt ?? '',
+      additionalPrompt: input.additionalPrompt ?? '',
+      _pendingBase64: input.imageBase64,
+      _sourceUrl: input.imageUrl,
+    }
+  }
+
+  function restoreFromHistory(entry: HistoryEntry) {
+    loadIntoAnalyse({ ...entry, id: entry.id })
+  }
+
   async function urlToBase64(url: string): Promise<{ base64: string, mimeType: string }> {
     const res = await fetch(url)
     if (!res.ok)
@@ -240,7 +338,8 @@ export function useAnalyse() {
       return
     }
 
-    if (!image.value) {
+    // 图片可能来自 File，也可能来自载入的 base64（此时 image 为 null）
+    if (!image.value && !base64Image.value) {
       errorMsg.value = '请先上传图片或输入图片链接。'
       return
     }
@@ -275,15 +374,20 @@ export function useAnalyse() {
 
       let sourceUrl: string | undefined
       let mimeType: string
-      if (typeof image.value === 'string') {
+      if (image.value instanceof File) {
+        base64Image.value = await fileToBase64(image.value)
+        mimeType = image.value.type
+      }
+      else if (typeof image.value === 'string') {
+        // 外部链接：拉下来转成 base64 再发给模型
         sourceUrl = image.value
         const result = await urlToBase64(sourceUrl)
         base64Image.value = result.base64
         mimeType = result.mimeType
       }
       else {
-        base64Image.value = await fileToBase64(image.value!)
-        mimeType = image.value!.type
+        // 载入的文件图：bytes 已经在内存里，直接用
+        mimeType = imageMimeType.value
       }
       const contents: Parameters<typeof generateContent>[1] = [
         { inlineData: { data: base64Image.value, mimeType } },
@@ -318,18 +422,7 @@ export function useAnalyse() {
       else {
         saveButtonDisabled.value = false
         errorMsg.value = ''
-        lastFavoriteResult.value = {
-          model: selectedModelId.value,
-          mode: selectedPromptId.value,
-          imageHash: '',
-          mimeType,
-          time: Date.now(),
-          result: finalText,
-          prompt: selectedPrompt.value?.content ?? '',
-          additionalPrompt: additionalPrompt.value.trim(),
-          _pendingBase64: lastImage ?? undefined,
-          _sourceUrl: sourceUrl,
-        }
+        acceptResult(finalText, mimeType, lastImage ?? undefined, sourceUrl)
       }
     }
     catch (error) {
@@ -340,18 +433,9 @@ export function useAnalyse() {
         console.warn('[Analysis] 已取消，保留已生成内容', { chars: result.value.length })
         if (result.value) {
           saveButtonDisabled.value = false
-          lastFavoriteResult.value = {
-            model: selectedModelId.value,
-            mode: selectedPromptId.value,
-            imageHash: '',
-            mimeType: typeof image.value === 'string' ? 'image/png' : (image.value?.type ?? 'image/png'),
-            time: Date.now(),
-            result: result.value,
-            prompt: selectedPrompt.value?.content ?? '',
-            additionalPrompt: additionalPrompt.value.trim(),
-            _pendingBase64: base64Image.value ?? undefined,
-            _sourceUrl: typeof image.value === 'string' ? image.value : undefined,
-          }
+          const isUrl = typeof image.value === 'string'
+          const mimeType = image.value instanceof File ? image.value.type : imageMimeType.value
+          acceptResult(result.value, mimeType, base64Image.value ?? undefined, isUrl ? image.value as string : undefined)
         }
       }
       else {
@@ -385,40 +469,25 @@ export function useAnalyse() {
     errorMsg.value = ''
 
     try {
-      const mimeType = pending.mimeType
-      const sourceUrl = pending._sourceUrl
-      const base64 = pending._pendingBase64
-
-      const item: FavoriteResult = {
+      await addFavorite({
         model: pending.model,
         mode: pending.mode,
-        imageHash: '',
-        mimeType,
         time: pending.time,
         result: pending.result,
-        prompt: pending.prompt ?? '',
-        additionalPrompt: pending.additionalPrompt ?? '',
-      }
+        mimeType: pending.mimeType,
+        prompt: pending.prompt,
+        additionalPrompt: pending.additionalPrompt,
+        base64: pending._pendingBase64,
+        sourceUrl: pending._sourceUrl,
+      })
 
-      if (sourceUrl) {
-        item.imageHash = await computeStringHash(sourceUrl)
-        item.imageUrl = sourceUrl
-      }
-      else {
-        if (!base64) {
-          errorMsg.value = '图片数据已丢失，请重新分析后再保存。'
-          saveButtonDisabled.value = false
-          return
-        }
-        item.imageHash = await saveImage(base64, mimeType)
-      }
-
-      if (!favoriteResults.data.value)
-        favoriteResults.data.value = []
-      favoriteResults.data.value.unshift(item)
-
-      // 保存成功，丢弃暂存数据
+      // 保存成功，丢弃暂存数据，并把对应历史标记为已保存
       lastFavoriteResult.value = null
+      const histId = currentHistoryId.value
+      if (histId) {
+        markHistorySaved(histId).catch(() => {})
+        currentHistoryId.value = null
+      }
     }
     catch (error) {
       console.error('[Save Error]', error)
@@ -430,6 +499,9 @@ export function useAnalyse() {
 
   return {
     image,
+    base64Image,
+    imageMimeType,
+    imageIsInline,
     selectedProviderId,
     selectedModelId,
     selectedPromptId,
@@ -458,6 +530,10 @@ export function useAnalyse() {
     handleStartEditResult,
     handleConfirmEditResult,
     handleCancelEditResult,
+    // 会话历史
+    currentHistoryId,
+    restoreFromHistory,
+    loadIntoAnalyse,
     // 开发测试注入点
     injectFakeResult,
     simulateStream,

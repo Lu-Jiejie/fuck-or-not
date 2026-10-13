@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
 import Button from '~/components/Button.vue'
 import ImageUploader from '~/components/ImageUploader.vue'
 import MarkdownRenderer from '~/components/MarkdownRenderer.vue'
 import Select from '~/components/Select.vue'
 import { useAnalyse } from '~/composables/useAnalyse'
+import { useChangelog } from '~/composables/useChangelog'
+import { useHistory } from '~/composables/useHistory'
 import { version } from '../../package.json'
 
 defineOptions({
@@ -14,6 +16,8 @@ defineOptions({
 
 const {
   image,
+  base64Image,
+  imageMimeType,
   selectedProviderId,
   selectedModelId,
   selectedPromptId,
@@ -40,7 +44,33 @@ const {
   handleStartEditResult,
   handleConfirmEditResult,
   handleCancelEditResult,
+  restoreFromHistory,
 } = useAnalyse()
+
+const { entries: historyEntries, isReady: historyReady, quotaWarning } = useHistory()
+const { hasUnseen, openChangelog } = useChangelog()
+
+// 刷新后是否展示了一次「已恢复」提示
+const restoredNotice = ref(false)
+
+// 误刷新恢复：仅在本次会话还没产出结果时，自动接上一次的分析
+onMounted(async () => {
+  // 等 IndexedDB 读完，否则 entries 还是空的
+  if (!historyReady.value) {
+    await new Promise<void>((resolve) => {
+      const stop = watch(historyReady, (v) => {
+        if (v) { stop(); resolve() }
+      })
+    })
+  }
+  if (result.value || analyseButtonLoading.value)
+    return
+  const latest = historyEntries.value[0]
+  if (!latest)
+    return
+  restoreFromHistory(latest)
+  restoredNotice.value = true
+})
 
 // 正在生成 或 已有结果但未保存 时，离开路由需确认
 const hasUnsavedWork = computed(() =>
@@ -71,13 +101,50 @@ onBeforeUnmount(() => {
   <div mb-6 text-left px-1>
     <h1 text-3xl font-bold flex="~ items-center" gap-2>
       Fuck or Not
-      <span text-xs font-mono font-normal class="bg-emerald-500/10" px-2 py-0.5 rounded-full text-emerald-700 dark:text-emerald-400 border="~ emerald-500/20 dark:emerald-400/20">
+      <!-- 版本号兼作更新历史入口；有新版本时带一个未读小点 -->
+      <button
+        relative cursor-pointer font-mono font-normal text-xs px-2 py-0.5 rounded-full
+        class="bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20 dark:border-emerald-400/20 hover:bg-emerald-500/20 transition-colors duration-200"
+        :title="hasUnseen ? '有新版本，点击查看更新历史' : '查看更新历史'"
+        @click="openChangelog"
+      >
         v{{ version }}
-      </span>
+        <span
+          v-if="hasUnseen"
+          class="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-teal-500"
+        />
+      </button>
     </h1>
     <p text-sm op-50 mt-1>
       上还是不上？
     </p>
+  </div>
+
+  <!-- 刷新恢复提示 -->
+  <div
+    v-if="restoredNotice"
+    mb-4 rounded-lg border="~ base" px-4 py-2 text-xs op-70 text-left
+    flex="~ items-center justify-between gap-3"
+  >
+    <span>
+      已恢复上次未保存的分析结果，可在
+      <router-link to="/history" class="underline hover:text-teal-600">
+        会话历史
+      </router-link>
+      中查看全部记录。
+    </span>
+    <button text-xs op-50 hover:op-100 cursor-pointer @click="restoredNotice = false">
+      知道了
+    </button>
+  </div>
+
+  <!-- 历史存储告警 -->
+  <div
+    v-if="quotaWarning"
+    mb-4 rounded-lg px-4 py-2 text-xs text-left
+    class="bg-amber-500/10 border border-amber-500/40 text-amber-700 dark:text-amber-300"
+  >
+    {{ quotaWarning }}
   </div>
 
   <!-- 配置区 -->
@@ -99,7 +166,12 @@ onBeforeUnmount(() => {
   <!-- 上传区 -->
   <div mb-4 rounded-xl border="~ base" bg="white dark:black" p-6 text-left>
     <span label ml-0.5>上传图片</span>
-    <ImageUploader v-model="image" />
+    <!-- 载入的文件图把 bytes 通过 props 传进去，modelValue 只表示 File 或外链 -->
+    <ImageUploader
+      v-model="image"
+      :inline-base64="base64Image"
+      :inline-mime-type="imageMimeType"
+    />
   </div>
 
   <!-- 额外提示词 -->
