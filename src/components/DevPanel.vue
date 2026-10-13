@@ -1,12 +1,6 @@
 <script setup lang="ts">
-/**
- * 开发测试面板（仅 dev 模式挂载，见 App.vue）。
- *
- * 设计目标：不干扰对真实 UI 的判断。
- * - 平时只是一个右下角悬浮球，不占据页面布局
- * - 点开后是固定定位的浮窗，可拖动
- * - 收起后回到悬浮球，随时能把界面恢复成「纯产品态」再看一遍
- */
+// 开发测试面板（仅 dev 模式挂载，见 App.vue）。
+// 平时只是一个右下角悬浮球，点开是可拖动的浮窗，收起后恢复「纯产品态」。
 import { onClickOutside, useDraggable, useStorage } from '@vueuse/core'
 import { computed, ref } from 'vue'
 import { useAnalyse } from '~/composables/useAnalyse'
@@ -36,10 +30,7 @@ const { x, y } = useDraggable(panelRef, {
   preventDefault: true,
 })
 
-// 点击面板外部即收起。
-// 面板打开时悬浮球由 v-else 渲染、并不存在，所以不会被误判成「外部」。
-// 拖动用的把手是标题栏，useDraggable 在拖动结束后会吞掉那次 click，
-// 因此拖动不会顺手把面板关掉。
+// 点击面板外部即收起；面板打开时悬浮球并不存在，不会被误判成「外部」
 onClickOutside(panelRef, () => {
   isOpen.value = false
 })
@@ -56,12 +47,10 @@ const streamChunkSize = useStorage('dev-stream-chunk-size', 4)
 const streamInterval = useStorage('dev-stream-interval', 40)
 
 const streamState = ref<'idle' | 'running' | 'aborted' | 'done'>('idle')
-/** 本轮是否被用户主动中断；handleAbort 触发后由 runStream 读取 */
-let abortedThisRun = false
-/** 最近一次流式使用的文本，用于估算块数与耗时 */
-const lastStreamText = ref(STREAM_FIXTURE)
+let abortedThisRun = false // 本轮是否被主动中断，由 runStream 读取
+const lastStreamText = ref(STREAM_FIXTURE) // 最近一次流式文本，用于估算块数与耗时
 
-/** 流式规模预估：长文在默认参数下要跑几十秒，先让使用者心里有数 */
+// 长文在默认参数下要跑几十秒，先给出规模预估
 const streamPlan = computed(() => {
   const size = Number(streamChunkSize.value) || 4
   const interval = Number(streamInterval.value) || 40

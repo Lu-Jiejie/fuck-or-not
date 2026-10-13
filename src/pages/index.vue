@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onBeforeUnmount } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
 import Button from '~/components/Button.vue'
 import ImageUploader from '~/components/ImageUploader.vue'
@@ -22,6 +22,8 @@ const {
   errorMsg,
   analyseButtonLoading,
   analyseButtonDisabled,
+  analyseAborted,
+  cancelAnalyse,
   saveButtonDisabled,
   providerSelectOptions,
   modelSelectOptions,
@@ -51,7 +53,17 @@ onBeforeRouteLeave(() => {
   const message = analyseButtonLoading.value
     ? '正在生成结果，离开页面将中断本次分析，确定要离开吗？'
     : '当前结果尚未保存，离开页面后将丢失，确定要离开吗？'
-  return window.confirm(message)
+  const ok = window.confirm(message)
+  // 确认离开时真的中断请求，而不是把它丢在后台继续跑
+  if (ok && analyseButtonLoading.value)
+    cancelAnalyse()
+  return ok
+})
+
+// 组件卸载（含直接关闭标签页）时同样中断，避免请求悬空
+onBeforeUnmount(() => {
+  if (analyseButtonLoading.value)
+    cancelAnalyse()
 })
 </script>
 
@@ -161,7 +173,25 @@ onBeforeRouteLeave(() => {
     分析
   </Button>
 
-  <!-- 测试入口见右下角 DevPanel（仅 dev 模式） -->
+  <!-- 取消：生成过程中才出现，避免占用平时布局 -->
+  <div v-if="analyseButtonLoading" flex justify-end mt-2>
+    <button
+      text-xs rounded-md px-3 py-1.5 border="~ base"
+      op-60 hover="op-100 border-red-400 text-red-500"
+      transition-colors duration-200 cursor-pointer
+      @click="cancelAnalyse"
+    >
+      停止生成
+    </button>
+  </div>
+
+  <!-- 已取消提示：结果仍可保存 -->
+  <div
+    v-else-if="analyseAborted && result !== ''"
+    mt-2 text-xs op-50 text-left
+  >
+    已停止生成，下面是已完成的部分，可以直接保存。
+  </div>
 
   <!-- 结果区 -->
   <template v-if="result !== '' || errorMsg !== ''">

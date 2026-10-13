@@ -1,14 +1,9 @@
 import type { FavoriteResult, PendingFavoriteResult } from '~/types'
 import { useStorage } from '@vueuse/core'
 import { computed, ref, watch, watchEffect } from 'vue'
-import { addAdditionalPreset, additionalPromptPresets, computeStringHash, customPrompts, favoriteResults, fileToBase64, generateContent, getPromptById, providers, removeAdditionalPreset, saveImage } from '~/logic'
+import { addAdditionalPreset, additionalPromptPresets, computeStringHash, customPrompts, favoriteResults, fileToBase64, generateContent, getPromptById, isAbortError, providers, removeAdditionalPreset, saveImage } from '~/logic'
 
-/**
- * 分析页的状态放在模块作用域，使其成为共享单例。
- * 这样开发测试面板（DevPanel）与页面拿到的是同一份状态，
- * 也能避免多个组件各自 useAnalyse() 时出现互不相干的状态副本。
- * 与 useWebDAV / useChangelog 的写法保持一致。
- */
+// 状态放模块作用域使其成为共享单例，让 DevPanel 与页面拿到同一份状态
 const image = ref<File | string | null>(null)
 const base64Image = ref<string | null>(null)
 
@@ -27,8 +22,14 @@ const editedResultText = ref('')
 
 const lastFavoriteResult = ref<PendingFavoriteResult | null>(null)
 
-/** 流式模拟的中断标志，仅 dev 面板使用 */
+// 流式模拟的中断标志，仅 dev 面板使用
 const devStreamAbort = ref(false)
+
+// 真实分析的取消句柄，非空表示当前有请求在飞
+let analyseAbortController: AbortController | null = null
+
+// 本轮分析是否被用户主动取消
+const analyseAborted = ref(false)
 
 const selectedProvider = computed(() =>
   selectedProviderId.value
@@ -126,17 +127,13 @@ export function useAnalyse() {
   // 开发测试注入点（仅 dev 面板调用，不参与生产流程）
   // ──────────────────────────────────────────────
 
-  /**
-   * 把一个「假的分析结果」当作真实分析产物塞进状态机。
-   * 之后保存、编辑、收藏等流程与真实分析完全一致，便于离线测试。
-   */
+  // 把假结果当作真实分析产物塞进状态机，后续保存/编辑/收藏流程与真实分析一致
   function injectFakeResult(text: string, options: { withImage?: boolean } = {}) {
     errorMsg.value = ''
     isEditingResult.value = false
     result.value = text
     saveButtonDisabled.value = false
-    // 1×1 透明 PNG：只是为了让「保存结果」流程能真的写进 imageStore。
-    // 内联在这里，避免把 dev fixtures 拖进生产包。
+    // 1×1 透明 PNG：让「保存结果」能真的写进 imageStore；内联以免 dev fixtures 进生产包
     const placeholderImage = options.withImage === false
       ? ''
       : 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg=='
@@ -155,14 +152,7 @@ export function useAnalyse() {
     return text
   }
 
-  /**
-   * 模拟一次真实的流式分析，但不发起任何网络请求。
-   *
-   * 走的是和 handleAnalyseButtonClick 完全相同的 UI 状态机
-   * （loading / result 逐块累加 / 待存数据 / finally 收尾），
-   * 因此可以离线验证打字机效果、自动滚动、长文本渲染与中断行为，
-   * 不触碰 provider、apiKey、image 等前置校验。
-   */
+  // 模拟一次流式分析但不发网络请求，走与真实分析相同的 UI 状态机以便离线验证
   async function simulateStream(
     text: string,
     options: { chunkSize?: number, interval?: number, clear?: boolean } = {},
@@ -218,7 +208,7 @@ export function useAnalyse() {
     }
   }
 
-  /** 中断正在进行的流式模拟 */
+  // 中断正在进行的流式模拟
   function abortStream() {
     if (analyseButtonLoading.value)
       devStreamAbort.value = true
@@ -265,11 +255,16 @@ export function useAnalyse() {
     }
 
     analyseButtonLoading.value = true
+    analyseAborted.value = false
     errorMsg.value = ''
     result.value = ''
     // 清掉上一轮的待存数据，避免本轮失败后仍能把旧结果保存下来
     lastFavoriteResult.value = null
     saveButtonDisabled.value = false
+
+    // 每轮都换一个新的 controller，保证取消只影响本轮
+    const controller = new AbortController()
+    analyseAbortController = controller
 
     try {
       const systemInstruction = selectedPrompt.value.content || '分析这张图片'
@@ -296,6 +291,7 @@ export function useAnalyse() {
       if (userText)
         contents.push({ text: userText })
 
+      // 流式回调是 result 的唯一写入方，返回后不再整体覆盖，避免两条路径打架
       const response = await generateContent(
         selectedModelId.value,
         contents,
@@ -304,11 +300,13 @@ export function useAnalyse() {
         (chunk) => {
           result.value += chunk
         },
+        controller.signal,
       )
       const lastImage = base64Image.value
 
-      console.log(response)
-      if (response.text === '' || response.text === null || response.text === undefined) {
+      // 以实际渲染出来的文本为准；response.text 只用来判断是否为空
+      const finalText = result.value || response.text || ''
+      if (finalText === '') {
         if ((response.candidates && response.candidates[0]?.finishReason === 'PROHIBITED_CONTENT')
           || (response as any).promptFeedback?.blockReason) {
           errorMsg.value = '内容被安全过滤器阻止，请重试或更换模型。'
@@ -319,7 +317,6 @@ export function useAnalyse() {
       }
       else {
         saveButtonDisabled.value = false
-        result.value = response.text!
         errorMsg.value = ''
         lastFavoriteResult.value = {
           model: selectedModelId.value,
@@ -327,7 +324,7 @@ export function useAnalyse() {
           imageHash: '',
           mimeType,
           time: Date.now(),
-          result: response.text!,
+          result: finalText,
           prompt: selectedPrompt.value?.content ?? '',
           additionalPrompt: additionalPrompt.value.trim(),
           _pendingBase64: lastImage ?? undefined,
@@ -336,12 +333,43 @@ export function useAnalyse() {
       }
     }
     catch (error) {
-      console.error('[Analysis Error]', { provider: provider.name, error })
-      errorMsg.value = `Error: ${(error as Error).message || String(error)}`
+      if (isAbortError(error)) {
+        // 用户主动取消：保留已经流式生成的部分，允许直接保存半截结果
+        analyseAborted.value = true
+        errorMsg.value = ''
+        console.warn('[Analysis] 已取消，保留已生成内容', { chars: result.value.length })
+        if (result.value) {
+          saveButtonDisabled.value = false
+          lastFavoriteResult.value = {
+            model: selectedModelId.value,
+            mode: selectedPromptId.value,
+            imageHash: '',
+            mimeType: typeof image.value === 'string' ? 'image/png' : (image.value?.type ?? 'image/png'),
+            time: Date.now(),
+            result: result.value,
+            prompt: selectedPrompt.value?.content ?? '',
+            additionalPrompt: additionalPrompt.value.trim(),
+            _pendingBase64: base64Image.value ?? undefined,
+            _sourceUrl: typeof image.value === 'string' ? image.value : undefined,
+          }
+        }
+      }
+      else {
+        console.error('[Analysis Error]', { provider: provider.name, error })
+        errorMsg.value = `Error: ${(error as Error).message || String(error)}`
+      }
     }
     finally {
+      // 只有仍是本轮 controller 时才清理，避免覆盖下一轮的状态
+      if (analyseAbortController === controller)
+        analyseAbortController = null
       analyseButtonLoading.value = false
     }
+  }
+
+  // 取消正在进行的分析，保留已生成的部分文本
+  function cancelAnalyse() {
+    analyseAbortController?.abort()
   }
 
   async function handleSaveButtonClick() {
@@ -412,6 +440,8 @@ export function useAnalyse() {
     errorMsg,
     analyseButtonLoading,
     analyseButtonDisabled,
+    analyseAborted,
+    cancelAnalyse,
     saveButtonDisabled,
     providerSelectOptions,
     modelSelectOptions,

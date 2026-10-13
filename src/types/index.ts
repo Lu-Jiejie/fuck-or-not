@@ -36,11 +36,8 @@ export interface FavoriteResult {
   imageUrl?: string
 }
 
-/**
- * 分析完成后、尚未保存的待存条目。
- * 图片数据用 `_pendingBase64` / `_sourceUrl` 暂存，保存成功后再决定落到
- * imageStore（base64）还是直接记 URL；保存完成后即被丢弃。
- */
+// 分析完成但尚未保存的条目；图片数据暂存在 _pendingBase64 / _sourceUrl，
+// 保存成功后决定落到 imageStore 还是直接记 URL，随后即丢弃
 export interface PendingFavoriteResult extends FavoriteResult {
   _pendingBase64?: string
   _sourceUrl?: string

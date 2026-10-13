@@ -11,8 +11,7 @@ import { migrateIfNeeded } from './composables/useMigration'
 
 const isDev = import.meta.env.DEV
 
-// DevPanel 只在 dev 模式加载：用动态 import 让生产构建能整块剔除，
-// 否则测试用的 fixtures 字符串会被打进主包。
+// DevPanel 用动态 import 让生产构建整块剔除，否则 fixtures 会进主包
 const DevPanel = isDev
   ? defineAsyncComponent(() => import('./components/DevPanel.vue'))
   : null

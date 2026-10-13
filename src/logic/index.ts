@@ -185,12 +185,73 @@ export async function generateContent(
   systemInstruction: string,
   provider: ProviderConfig,
   onChunk?: (text: string) => void,
+  signal?: AbortSignal,
 ) {
   if (provider.type === 'gemini') {
-    return generateGeminiContent(model, contents, systemInstruction, provider, onChunk)
+    return generateGeminiContent(model, contents, systemInstruction, provider, onChunk, signal)
   }
   else {
-    return generateOpenAIContent(model, contents, systemInstruction, provider, onChunk)
+    return generateOpenAIContent(model, contents, systemInstruction, provider, onChunk, signal)
+  }
+}
+
+/** 统一识别主动取消，避免和各家的网络错误混淆 */
+export function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException
+    ? error.name === 'AbortError'
+    : (error as any)?.name === 'AbortError'
+}
+
+// 通用 SSE 读取器：OpenAI 与 Gemini 只有负载结构不同，分帧逻辑共用。
+// TextDecoder 的 stream 模式保证多字节字符被切在半个字上也不乱码。
+async function readSSE(
+  response: Response,
+  onEvent: (payload: any) => void,
+) {
+  const reader = response.body?.getReader()
+  if (!reader)
+    throw new Error('Response body is not readable')
+
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  const handleLine = (line: string) => {
+    const trimmed = line.trim()
+    // 兼容 `data:` 与 `data: `，忽略注释行与 event 行
+    if (!trimmed.startsWith('data:'))
+      return
+    const dataStr = trimmed.slice(5).trim()
+    if (!dataStr || dataStr === '[DONE]')
+      return
+    try {
+      onEvent(JSON.parse(dataStr))
+    }
+    catch {
+      // 单条负载坏了不该中断整条流
+    }
+  }
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done)
+        break
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || '' // 末尾可能是不完整的行，留到下一轮
+      for (const line of lines)
+        handleLine(line)
+    }
+    buffer += decoder.decode() // 冲刷解码器与残留的最后一行
+    if (buffer.trim())
+      handleLine(buffer)
+  }
+  finally {
+    // 正常结束、解析出错、用户取消，都要释放底层连接
+    try {
+      await reader.cancel()
+    }
+    catch { /* already closed */ }
   }
 }
 
@@ -199,7 +260,8 @@ async function generateGeminiContent(
   contents: any,
   systemInstruction: string,
   provider: ProviderConfig,
-  _onChunk?: (text: string) => void,
+  onChunk?: (text: string) => void,
+  signal?: AbortSignal,
 ) {
   const { apiKey, apiUrl: rawUrl } = provider
   if (!apiKey)
@@ -207,10 +269,13 @@ async function generateGeminiContent(
 
   const baseUrl = rawUrl || 'https://generativelanguage.googleapis.com'
   const isStandardGemini = baseUrl.includes('generativelanguage.googleapis.com') || baseUrl.includes('gemini')
+  const stream = Boolean(onChunk)
 
   if (isStandardGemini) {
-    // 标准 Gemini API 格式
-    const apiUrl = `${baseUrl}/v1beta/models/${model}:generateContent?key=${apiKey}`
+    // 标准 Gemini API 格式；需要流式时走 streamGenerateContent + alt=sse
+    const method = stream ? 'streamGenerateContent' : 'generateContent'
+    const query = stream ? `?alt=sse&key=${apiKey}` : `?key=${apiKey}`
+    const apiUrl = `${baseUrl}/v1beta/models/${model}:${method}${query}`
     const requestBody: any = {
       contents: Array.isArray(contents)
         ? contents.map((content: any) => {
@@ -239,14 +304,46 @@ async function generateGeminiContent(
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(requestBody),
+      signal,
     })
     if (!response.ok)
       throw new Error(`Gemini API error (${response.status}): ${await response.text()}`)
 
-    const data = await response.json()
+    if (!stream) {
+      const data = await response.json()
+      return {
+        text: data.candidates?.[0]?.content?.parts?.[0]?.text || '',
+        candidates: [{ finishReason: data.candidates?.[0]?.finishReason || 'STOP' }],
+      }
+    }
+
+    // 流式：每个 SSE 事件都是一个完整的 GenerateContentResponse
+    let fullText = ''
+    let finishReason = 'STOP'
+    let blockReason: string | null = null
+
+    await readSSE(response, (data) => {
+      if (data?.promptFeedback?.blockReason) {
+        blockReason = data.promptFeedback.blockReason
+        return
+      }
+      const candidate = data?.candidates?.[0]
+      const parts = candidate?.content?.parts
+      // 一个事件里可能有多个 part，逐个取文本
+      for (const part of parts ?? []) {
+        if (part?.text) {
+          fullText += part.text
+          onChunk!(part.text)
+        }
+      }
+      if (candidate?.finishReason)
+        finishReason = candidate.finishReason
+    })
+
     return {
-      text: data.candidates?.[0]?.content?.parts?.[0]?.text || '',
-      candidates: [{ finishReason: data.candidates?.[0]?.finishReason || 'STOP' }],
+      text: fullText,
+      candidates: [{ finishReason: blockReason ?? finishReason }],
+      ...(blockReason ? { promptFeedback: { blockReason } } : {}),
     }
   }
   else {
@@ -257,15 +354,41 @@ async function generateGeminiContent(
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-      body: JSON.stringify({ model, messages, temperature: 0.7, ...buildOpenAIGenerationConfig(provider.generationConfig) }),
+      body: JSON.stringify({
+        model,
+        messages,
+        ...buildOpenAIGenerationConfig(provider.generationConfig),
+        ...(stream ? { stream: true } : {}),
+      }),
+      signal,
     })
     if (!response.ok)
       throw new Error(`Gemini (OpenAI format) API error (${response.status}): ${await response.text()}`)
 
-    const data = await response.json()
+    if (!stream) {
+      const data = await response.json()
+      return {
+        text: data.choices?.[0]?.message?.content || '',
+        candidates: [{ finishReason: data.choices?.[0]?.finish_reason === 'content_filter' ? 'PROHIBITED_CONTENT' : 'STOP' }],
+      }
+    }
+
+    let fullText = ''
+    let finishReason = 'STOP'
+    await readSSE(response, (data) => {
+      const choice = data?.choices?.[0]
+      const delta = choice?.delta?.content
+      if (delta) {
+        fullText += delta
+        onChunk!(delta)
+      }
+      if (choice?.finish_reason)
+        finishReason = choice.finish_reason
+    })
+
     return {
-      text: data.choices?.[0]?.message?.content || '',
-      candidates: [{ finishReason: data.choices?.[0]?.finish_reason === 'content_filter' ? 'PROHIBITED_CONTENT' : 'STOP' }],
+      text: fullText,
+      candidates: [{ finishReason: finishReason === 'content_filter' ? 'PROHIBITED_CONTENT' : 'STOP' }],
     }
   }
 }
@@ -276,6 +399,7 @@ async function generateOpenAIContent(
   systemInstruction: string,
   provider: ProviderConfig,
   onChunk?: (text: string) => void,
+  signal?: AbortSignal,
 ) {
   const { apiKey, apiUrl: rawUrl } = provider
   if (!apiKey)
@@ -283,102 +407,58 @@ async function generateOpenAIContent(
 
   const apiUrl = normalizeApiUrl(rawUrl, 'https://api.openai.com/v1/chat/completions')
   const messages = buildOpenAIMessages(contents, systemInstruction)
+  // 只有需要流式回调时才要求 stream；否则保持一次性返回
+  const stream = Boolean(onChunk)
 
-  if (onChunk) {
-    // SSE 流式响应
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-      body: JSON.stringify({ model, messages, temperature: 0.7, stream: true, ...buildOpenAIGenerationConfig(provider.generationConfig) }),
-    })
-    if (!response.ok)
-      throw new Error(`API error (${response.status}): ${await response.text()}`)
+  const response = await fetch(apiUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model,
+      messages,
+      ...buildOpenAIGenerationConfig(provider.generationConfig),
+      ...(stream ? { stream: true } : {}),
+    }),
+    signal,
+  })
+  if (!response.ok)
+    throw new Error(`API error (${response.status}): ${await response.text()}`)
 
-    const reader = response.body?.getReader()
-    if (!reader)
-      throw new Error('Response body is not readable')
-
-    const decoder = new TextDecoder()
-    let fullText = ''
-    let finishReason = 'STOP'
-    let buffer = ''
-    let streamError: string | null = null
-
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done)
-        break
-      buffer += decoder.decode(value, { stream: true })
-      const lines = buffer.split('\n')
-      buffer = lines.pop() || ''
-      for (const line of lines) {
-        if (!line.trim() || !line.startsWith('data: '))
-          continue
-        const dataStr = line.slice(6)
-        if (dataStr === '[DONE]')
-          continue
-        try {
-          const data = JSON.parse(dataStr)
-          if (data.error) {
-            streamError = data.error.message || 'Unknown API error'
-            break
-          }
-          const delta = data.choices?.[0]?.delta
-          if (delta?.content) {
-            fullText += delta.content
-            onChunk(delta.content)
-          }
-          if (data.choices?.[0]?.finish_reason)
-            finishReason = data.choices[0].finish_reason
-        }
-        catch { /* skip parse error */ }
-      }
-      if (streamError)
-        break
-    }
-    // 处理剩余 buffer
-    if (!streamError && buffer.trim() && buffer.startsWith('data: ')) {
-      const dataStr = buffer.slice(6)
-      if (dataStr !== '[DONE]') {
-        try {
-          const data = JSON.parse(dataStr)
-          if (data.error) {
-            streamError = data.error.message || 'Unknown API error'
-          }
-          else {
-            const delta = data.choices?.[0]?.delta
-            if (delta?.content) {
-              fullText += delta.content
-              onChunk(delta.content)
-            }
-            if (data.choices?.[0]?.finish_reason)
-              finishReason = data.choices[0].finish_reason
-          }
-        }
-        catch { /* skip */ }
-      }
-    }
-    if (streamError)
-      throw new Error(streamError)
-    return {
-      text: fullText,
-      candidates: [{ finishReason: finishReason === 'content_filter' ? 'PROHIBITED_CONTENT' : 'STOP' }],
-    }
-  }
-  else {
-    // 非流式
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-      body: JSON.stringify({ model, messages, temperature: 0.7, ...buildOpenAIGenerationConfig(provider.generationConfig) }),
-    })
-    if (!response.ok)
-      throw new Error(`API error (${response.status}): ${await response.text()}`)
+  if (!stream) {
     const data = await response.json()
     return {
       text: data.choices?.[0]?.message?.content || '',
       candidates: [{ finishReason: data.choices?.[0]?.finish_reason === 'content_filter' ? 'PROHIBITED_CONTENT' : 'STOP' }],
     }
+  }
+
+  let fullText = ''
+  let finishReason = 'STOP'
+  let streamError: string | null = null
+
+  await readSSE(response, (data) => {
+    if (streamError)
+      return
+    if (data?.error) {
+      streamError = data.error.message || 'Unknown API error'
+      return
+    }
+    const choice = data?.choices?.[0]
+    const delta = choice?.delta?.content
+    if (delta) {
+      fullText += delta
+      onChunk!(delta)
+    }
+    if (choice?.finish_reason)
+      finishReason = choice.finish_reason
+  })
+
+  if (streamError)
+    throw new Error(streamError)
+
+  return {
+    text: fullText,
+    candidates: [{ finishReason: finishReason === 'content_filter' ? 'PROHIBITED_CONTENT' : 'STOP' }],
   }
 }
 
